@@ -1,0 +1,63 @@
+my-ml-project/
+│
+├── data/                       # Dữ liệu dự án
+│   ├── raw/                    # Dữ liệu thô ban đầu (không sửa đổi)
+│   ├── processed/              # Dữ liệu đã làm sạch/xử lý
+│   └── external/               # Dữ liệu từ nguồn bên ngoài
+│
+├── models/                     # Nơi chứa các artifact/file model sau khi train
+│   ├── model.pkl               # File mô hình đã huấn luyện (hoặc .pth, .keras, .onnx)
+│   └── preprocessor.pkl        # File tiền xử lý (Scaler, Encoder, TF-IDF...)
+│
+├── notebooks/                  # Jupyter Notebooks dùng để EDA và thử nghiệm
+│   ├── 01_EDA.ipynb
+│   └── 02_Model_Training.ipynb
+│
+├── src/                        # Mã nguồn chính cho việc TRAINING (Core Logic)
+│   ├── __init__.py
+│   ├── data_loader.py          # Đọc và chia dữ liệu
+│   ├── preprocessing.py        # Làm sạch, biến đổi tính năng (Feature Engineering)
+│   ├── train.py                # Script chạy huấn luyện mô hình
+│   └── evaluate.py             # Đánh giá độ chính xác mô hình
+│
+├── app/                        # Ứng dụng / API (Phần DEPLOYMENT)
+│   ├── __init__.py
+│   ├── main.py                 # Endpoint chính (FastAPI / Flask / Streamlit)
+│   ├── inference.py            # Code nạp model và dự đoán dữ liệu mới
+│   ├── templates/              # Giao diện HTML (nếu làm Web App cơ bản)
+│   └── static/                 # CSS/JS/Hình ảnh cho ứng dụng
+│
+├── tests/                      # Unit tests cho code
+│   ├── test_data.py
+│   └── test_model.py
+│
+├── .gitignore                  # Bỏ qua data dung lượng lớn, env, cache...
+├── README.md                   # Hướng dẫn chạy dự án
+├── requirements.txt            # Danh sách các thư viện Python
+└── Dockerfile                  # (Tùy chọn) Đóng gói ứng dụng để triển khai
+
+## tien xu ly 
+transactions thay ki tu trong bang 0
+them cot price 
+[ Dữ liệu từ train_merged.parquet ]
+             │
+             ▼
+[ 1. Trích xuất đặc trưng thời gian (Date Features) ]  <-- Tách cột 'date' thành day, month, year, dayofweek
+             │
+             ▼
+[ 2. ColumnTransformer (Chia路线 xử lý) ]
+             │
+             ├─ Nhánh A: Biến số (Numeric)
+             │    └─ Imputer (Điền NaN) -> Scaler (Chuẩn hóa)
+             │
+             ├─ Nhánh B: Biến phân loại thưa (Low Cardinality Categorical)
+             │    └─ Imputer (Điền NaN) -> OneHotEncoder (Mã hóa)
+             │
+             └─ Nhánh C: Biến phân loại dày (High Cardinality Categorical)
+                  └─ Imputer (Điền NaN) -> TargetEncoder hoặc OrdinalEncoder
+             │
+             ▼
+[ Dữ liệu đã chuẩn bị sẵn sàng (Numeric Array) ]
+             │
+             ▼
+[ Bước 3: Truyền vào Model (LightGBM/XGBoost) ]
