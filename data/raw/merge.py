@@ -46,6 +46,7 @@ nat_holidays = nat_holidays.rename(columns={
     'description': 'holiday_description'
 })
 nat_holidays = nat_holidays.drop_duplicates(subset=['date']) # Tránh trùng lặp ngày
+
 # 4. Bắt đầu Merge dữ liệu vào Train
 print("Đang ghép dữ liệu...")
 # 4.1 Ghép thông tin cửa hàng (stores)
