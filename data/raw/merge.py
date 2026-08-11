@@ -12,18 +12,18 @@ dtypes_train = {
 
 # Đọc dữ liệu train (có thể mất vài phút do file rất lớn)
 print("Đang đọc train.csv...")
-train = pd.read_csv(r'E:\nic\SIC-AI-PROJECT-\data\raw\train.csv', parse_dates=['date'], dtype=dtypes_train)
+train = pd.read_csv(r'c:\Users\ci123\SIC-AI-PROJECT-\data\raw\train.csv', parse_dates=['date'], dtype=dtypes_train)
 
 # Lấy dữ liệu từ ngày 2016-01-01 trở đi để giảm dung lượng dữ liệu
-train = train[train['date'] >= '2016-01-01'].copy()
+train = train[train['Date'] >= '2016-01-01'].copy()
 
 # Đọc các file phụ trợ
 print("Đang đọc các file phụ trợ...")
-stores = pd.read_csv(r'E:\nic\SIC-AI-PROJECT-\data\raw\stores.csv')
-items = pd.read_csv(r'E:\nic\SIC-AI-PROJECT-\data\raw\items.csv')
-oil = pd.read_csv(r'E:\nic\SIC-AI-PROJECT-\data\raw\oil.csv', parse_dates=['date'])
-holidays = pd.read_csv(r'E:\nic\SIC-AI-PROJECT-\data\raw\holidays_events.csv', parse_dates=['date'])
-transactions = pd.read_csv(r'E:\nic\SIC-AI-PROJECT-\data\raw\transactions.csv', parse_dates=['date'])
+stores = pd.read_csv(r'c:\Users\ci123\SIC-AI-PROJECT-\data\raw\stores.csv')
+items = pd.read_csv(r'c:\Users\ci123\SIC-AI-PROJECT-\raw\items.csv')
+oil = pd.read_csv(r'c:\Users\ci123\SIC-AI-PROJECT-\data\raw\oil.csv', parse_dates=['date'])
+holidays = pd.read_csv(r'c:\Users\ci123\SIC-AI-PROJECT-\data\raw\holidays_events.csv', parse_dates=['date'])
+transactions = pd.read_csv(r'c:\Users\ci123\SIC-AI-PROJECT-\data\raw\transactions.csv', parse_dates=['date'])
 
 # Tiền xử lý NaN của onpromotion
 train['onpromotion'] = train['onpromotion'].fillna(False)

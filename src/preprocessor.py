@@ -34,7 +34,7 @@ def add_lag_features(df, lags=(7, 14)):
     for lag in lags:
         df[f"sales_lag{lag}"] = df.groupby(["store_nbr", "family"])["target"].shift(lag)
 
-    # Thêm lag cho transactions (như đã khai báo trong COLS_FILL_ZERO)
+    #Thêm lag cho transactions (như đã khai báo trong COLS_FILL_ZERO)
     #df["transactions_lag1"] = df.groupby(["store_nbr", "family"])["transactions"].shift(1)
     return df
 
