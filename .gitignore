@@ -2,3 +2,5 @@ data/raw/*.csv
 data/processed/*.parquet
 scr/__pycache__/*.pyc
 anaconda_projects
+models/*.pkl
+__pycache__/
