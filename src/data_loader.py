@@ -1,11 +1,6 @@
 """
 data_loader.py
 Đọc và chuẩn bị dữ liệu Favorita — dùng chung cho train.py và predict.py.
-
-Thay đổi so với bản trước:
-- transactions.csv: chuyển thành LAG feature (không dùng giá trị cùng ngày —
-  tránh leakage vì test/tương lai không có transactions thật của "hôm nay").
-- Gộp lại bước aggregate_to_family_level — đúng scope 1 tháng đã lên kế hoạch.
 """
 
 import pandas as pd
@@ -32,7 +27,6 @@ def load_raw_files():
     holidays = pd.read_csv(RAW_DIR / "holidays_events.csv", parse_dates=["date"])
     transactions = pd.read_csv(RAW_DIR / "transactions.csv", parse_dates=["date"])
     return train, stores, items, oil, holidays, transactions
-
 
 def filter_date_range(df, start_date="2016-01-01"):
     return df[df["date"] >= start_date].copy()
