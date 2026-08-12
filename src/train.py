@@ -126,8 +126,7 @@ def train(force_rebuild: bool = False):
         model.fit(
             X_train,
             y_train,
-            eval_X=X_val, 
-            eval_y=y_val,
+            eval_set=[(X_val, y_val)],
             eval_metric="rmse",
             callbacks=[
                 early_stopping(stopping_rounds=50, verbose=False),

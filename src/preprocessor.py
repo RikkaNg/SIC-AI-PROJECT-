@@ -18,7 +18,7 @@ set_config(transform_output="pandas")
 BOOL_COLS = ["onpromotion", "is_earthquake_period"]
 COLS_FILL_ZERO = ["transactions_lag1", "sales_lag7", "sales_lag14", "sales_rolling_mean7"]
 COLS_CATEGORICAL = ["store_nbr", "family", "city", "state", "type", "holiday_type"]
-COLS_PASSTHROUGH = ["dayofweek", "month", "is_weekend", "oil_price", "cluster"] + BOOL_COLS
+COLS_PASSTHROUGH = ["dayofweek", "month", "is_weekend", "oil_price", "cluster", "perishable"] + BOOL_COLS
 
 # ---------- Bước 1: tạo feature bằng pandas ----------
 

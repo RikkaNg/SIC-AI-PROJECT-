@@ -45,7 +45,7 @@ them cot price
 [ 1. Trích xuất đặc trưng thời gian (Date Features) ]  <-- Tách cột 'date' thành day, month, year, dayofweek
              │
              ▼
-[ 2. ColumnTransformer (Chia路线 xử lý) ]
+[ 2. ColumnTransformer (Chia xử lý) ]
              │
              ├─ Nhánh A: Biến số (Numeric)
              │    └─ Imputer (Điền NaN) -> Scaler (Chuẩn hóa)
@@ -61,3 +61,16 @@ them cot price
              │
              ▼
 [ Bước 3: Truyền vào Model (LightGBM/XGBoost) ]
+
+cần back/frontend nhúng trên wed để giao tiếp với người dung
+
+với mặt hàng kinh doanh tốt/ sản phẩm không tốt cách xử lý
+
+tập dữ liệu lấy bối cảnh ở một chuỗi siêu thị ở Ecuador
+
+- nên lấy dữ liệu trong khoảng thời gian nào
+- cách xử lý các cột có sự kiện liên quan đến thiên tai, có một khoảng thời gian thiên tai bị trả hang
+- dự báo doanh thu nếu có thời tiết xấu,
+- dự báo sức mua nếu có ngày lễ để hạn chế tình trạng cháy hang
+- mô hình học dựa theo dữ liệu hàng ngày
+- auto retrain model khi có dữ liệu mới

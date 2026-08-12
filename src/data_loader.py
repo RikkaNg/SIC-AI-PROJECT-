@@ -105,6 +105,7 @@ def aggregate_to_family_level(df):
             state=("state", "first"),
             type=("type", "first"),
             cluster=("cluster", "first"),
+            perishable=("perishable", "max"),
         )
         .reset_index()
     )
