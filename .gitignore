@@ -4,3 +4,7 @@ scr/__pycache__/*.pyc
 anaconda_projects
 models/*.pkl
 __pycache__/
+
+*.log
+src/*.log
+train_log.log
