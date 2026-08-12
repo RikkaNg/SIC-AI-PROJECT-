@@ -52,14 +52,22 @@ def prepare_oil(oil, date_min, date_max):
     oil["dcoilwtico"] = oil["dcoilwtico"].ffill().bfill()
     oil = oil.rename(columns={"dcoilwtico": "oil_price"})
     return oil
-
+#
+# def prepare_holidays(holidays):
+#     holidays = holidays[holidays["transferred"] == False]
+#     nat_holidays = holidays[holidays["locale"] == "National"][["date", "type", "description"]]
+#     nat_holidays = nat_holidays.rename(columns={"type": "holiday_type", "description": "holiday_description"})
+#     nat_holidays = nat_holidays.drop_duplicates(subset=["date"])
+#     return nat_holidays
 def prepare_holidays(holidays):
-    holidays = holidays[holidays["transferred"] == False]
-    nat_holidays = holidays[holidays["locale"] == "National"][["date", "type", "description"]]
-    nat_holidays = nat_holidays.rename(columns={"type": "holiday_type", "description": "holiday_description"})
-    nat_holidays = nat_holidays.drop_duplicates(subset=["date"])
-    return nat_holidays
-
+    # Chỉ bỏ các ngày bị transferred, giữ lại tất cả các cấp độ (National, Regional, Local)
+    holidays = holidays[holidays["transferred"] == False].copy()
+    holidays = holidays.rename(columns={
+        "type": "holiday_type",
+        "description": "holiday_description"
+    })
+    # Giữ lại cột locale và locale_name để phục vụ việc merge chi tiết
+    return holidays[["date", "locale", "locale_name", "holiday_type", "holiday_description"]]
 
 def prepare_transactions_lag(transactions, lag_days=1):
     """
@@ -73,16 +81,64 @@ def prepare_transactions_lag(transactions, lag_days=1):
     transactions[col_name] = transactions.groupby("store_nbr")["transactions"].shift(lag_days)
     return transactions[["store_nbr", "date", col_name]]
 
+# def merge_dimensions(df, stores, items, oil, holidays):
+#     """Ghép các bảng dimension ở mức item — KHÔNG còn merge transactions ở đây (xử lý riêng sau aggregate)."""
+#     df = df.merge(stores, on="store_nbr", how="left")
+#     df = df.merge(items, on="item_nbr", how="left")
+#     df = df.merge(oil, on="date", how="left")
+#     before = len(df)
+#     df = df.merge(holidays, on="date", how="left")
+#     assert len(df) == before, "Số dòng thay đổi sau khi join holidays — kiểm tra trùng ngày"
+#     df["holiday_type"] = df["holiday_type"].fillna("Normal Day")
+#     df["holiday_description"] = df["holiday_description"].fillna("None")
+#     return df
 def merge_dimensions(df, stores, items, oil, holidays):
-    """Ghép các bảng dimension ở mức item — KHÔNG còn merge transactions ở đây (xử lý riêng sau aggregate)."""
+    """Ghép các bảng dimension ở mức item — Xử lý holidays chi tiết theo National/Regional/Local."""
     df = df.merge(stores, on="store_nbr", how="left")
     df = df.merge(items, on="item_nbr", how="left")
     df = df.merge(oil, on="date", how="left")
+
+    # --- XỬ LÝ HOLIDAYS CHI TIẾT THEO CẤP ĐỘ ---
+    # Chia nhỏ holidays thành 3 bảng để xử lý riêng, tránh duplicate dòng khi merge
+    h_nat = holidays[holidays["locale"] == "National"].drop_duplicates(subset=["date"])
+    h_reg = holidays[holidays["locale"] == "Regional"].drop_duplicates(subset=["date", "locale_name"])
+    h_loc = holidays[holidays["locale"] == "Local"].drop_duplicates(subset=["date", "locale_name"])
+
     before = len(df)
-    df = df.merge(holidays, on="date", how="left")
+
+    # 1. Merge National theo date
+    df = df.merge(
+        h_nat[["date", "holiday_type", "holiday_description"]],
+        on="date", how="left"
+    )
+
+    # 2. Merge Regional theo date và state (locale_name của Regional trùng với state)
+    df = df.merge(
+        h_reg[["date", "locale_name", "holiday_type", "holiday_description"]].rename(columns={"locale_name": "state"}),
+        on=["date", "state"], how="left", suffixes=("", "_reg")
+    )
+    # Nếu National bị NaN, lấy giá trị của Regional đè lên
+    df["holiday_type"] = df["holiday_type"].fillna(df["holiday_type_reg"])
+    df["holiday_description"] = df["holiday_description"].fillna(df["holiday_description_reg"])
+    df.drop(columns=["holiday_type_reg", "holiday_description_reg"], inplace=True)
+
+    # 3. Merge Local theo date và city (locale_name của Local trùng với city)
+    df = df.merge(
+        h_loc[["date", "locale_name", "holiday_type", "holiday_description"]].rename(columns={"locale_name": "city"}),
+        on=["date", "city"], how="left", suffixes=("", "_loc")
+    )
+    # Nếu vẫn NaN, lấy giá trị của Local đè lên
+    df["holiday_type"] = df["holiday_type"].fillna(df["holiday_type_loc"])
+    df["holiday_description"] = df["holiday_description"].fillna(df["holiday_description_loc"])
+    df.drop(columns=["holiday_type_loc", "holiday_description_loc"], inplace=True)
+
+    # Kiểm tra an toàn
     assert len(df) == before, "Số dòng thay đổi sau khi join holidays — kiểm tra trùng ngày"
+
+    # Những ngày thực sự không có lễ gì mới là 'Normal Day'
     df["holiday_type"] = df["holiday_type"].fillna("Normal Day")
     df["holiday_description"] = df["holiday_description"].fillna("None")
+
     return df
 
 def add_earthquake_flag(df):

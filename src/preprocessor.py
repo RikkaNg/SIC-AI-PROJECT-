@@ -15,10 +15,12 @@ from sklearn.compose import ColumnTransformer
 set_config(transform_output="pandas")
 
 # Thêm store_nbr vào biến phân loại vì dữ liệu đã được aggregate xuống mức family
-BOOL_COLS = ["onpromotion", "is_earthquake_period"]
+BOOL_COLS = ["onpromotion", "is_earthquake_period","is_holiday"]
 COLS_FILL_ZERO = ["transactions_lag1", "sales_lag7", "sales_lag14", "sales_rolling_mean7"]
 COLS_CATEGORICAL = ["store_nbr", "family", "city", "state", "type", "holiday_type"]
-COLS_PASSTHROUGH = ["dayofweek", "month", "is_weekend", "oil_price", "cluster", "perishable"] + BOOL_COLS
+COLS_PASSTHROUGH = ["dayofweek", "month", "is_weekend",
+                    "oil_price", "cluster", "perishable",
+                    "is_holiday_lead1", "is_holiday_lead2"] + BOOL_COLS
 
 # ---------- Bước 1: tạo feature bằng pandas ----------
 
@@ -28,7 +30,29 @@ def add_date_features(df):
     df["is_weekend"] = df["dayofweek"].isin([5, 6]).astype(int)
     return df
 
-def add_lag_features(df, lags=(7, 14)):
+
+def add_holiday_effects(df):
+    """Tạo feature cho hiệu ứng trước/sau ngày lễ."""
+    df = df.sort_values(["store_nbr", "family", "date"]).copy()
+
+    # Tạo cột nhị phân: 1 nếu là ngày lễ, 0 nếu là Normal Day
+    df['is_holiday'] = (df['holiday_type'] != 'Normal Day').astype(int)
+
+    # Hiệu ứng sau lễ (Post-holiday): Hôm qua có phải lễ không?
+    df["is_holiday_lag1"] = df.groupby(["store_nbr", "family"])["is_holiday"].shift(1)
+    df["is_holiday_lag2"] = df.groupby(["store_nbr", "family"])["is_holiday"].shift(2)
+
+    # Hiệu ứng trước lễ (Pre-holiday): Ngày mai có phải lễ không? (Dùng shift âm)
+    df["is_holiday_lead1"] = df.groupby(["store_nbr", "family"])["is_holiday"].shift(-1)
+    df["is_holiday_lead2"] = df.groupby(["store_nbr", "family"])["is_holiday"].shift(-2)
+
+    # Điền 0 cho các dòng NaN (ở đầu và cuối chuỗi)
+    holiday_cols = ["is_holiday_lag1", "is_holiday_lag2", "is_holiday_lead1", "is_holiday_lead2"]
+    df[holiday_cols] = df[holiday_cols].fillna(0).astype(int)
+
+    return df
+
+def add_lag_features(df, lags=(7, 14, 28)):
     df = df.sort_values(["store_nbr", "family", "date"])
     # Lag cho target (sales)
     for lag in lags:
@@ -56,6 +80,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df = add_date_features(df)
     df = add_lag_features(df)
     df = add_rolling_features(df)
+    df = add_holiday_effects(df)
 
     # --- SỬA LỖI 5: Reset index để đảm bảo tính đồng nhất ---
     df = df.reset_index(drop=True)
