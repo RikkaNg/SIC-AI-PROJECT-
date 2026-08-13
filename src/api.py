@@ -1,3 +1,6 @@
+#----------------------------------------
+# Nhớ cần pip install fastapi "uvicorn[standard]" trước khi chạy python -m uvicorn src.api:app --reload --port 8000
+#----------------------------------------
 from typing import List, Optional
  
 import pandas as pd
