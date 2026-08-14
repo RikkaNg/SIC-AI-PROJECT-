@@ -52,13 +52,7 @@ def prepare_oil(oil, date_min, date_max):
     oil["dcoilwtico"] = oil["dcoilwtico"].ffill().bfill()
     oil = oil.rename(columns={"dcoilwtico": "oil_price"})
     return oil
-#
-# def prepare_holidays(holidays):
-#     holidays = holidays[holidays["transferred"] == False]
-#     nat_holidays = holidays[holidays["locale"] == "National"][["date", "type", "description"]]
-#     nat_holidays = nat_holidays.rename(columns={"type": "holiday_type", "description": "holiday_description"})
-#     nat_holidays = nat_holidays.drop_duplicates(subset=["date"])
-#     return nat_holidays
+
 def prepare_holidays(holidays):
     # Chỉ bỏ các ngày bị transferred, giữ lại tất cả các cấp độ (National, Regional, Local)
     holidays = holidays[holidays["transferred"] == False].copy()
@@ -81,17 +75,6 @@ def prepare_transactions_lag(transactions, lag_days=1):
     transactions[col_name] = transactions.groupby("store_nbr")["transactions"].shift(lag_days)
     return transactions[["store_nbr", "date", col_name]]
 
-# def merge_dimensions(df, stores, items, oil, holidays):
-#     """Ghép các bảng dimension ở mức item — KHÔNG còn merge transactions ở đây (xử lý riêng sau aggregate)."""
-#     df = df.merge(stores, on="store_nbr", how="left")
-#     df = df.merge(items, on="item_nbr", how="left")
-#     df = df.merge(oil, on="date", how="left")
-#     before = len(df)
-#     df = df.merge(holidays, on="date", how="left")
-#     assert len(df) == before, "Số dòng thay đổi sau khi join holidays — kiểm tra trùng ngày"
-#     df["holiday_type"] = df["holiday_type"].fillna("Normal Day")
-#     df["holiday_description"] = df["holiday_description"].fillna("None")
-#     return df
 def merge_dimensions(df, stores, items, oil, holidays):
     """Ghép các bảng dimension ở mức item — Xử lý holidays chi tiết theo National/Regional/Local."""
     df = df.merge(stores, on="store_nbr", how="left")
