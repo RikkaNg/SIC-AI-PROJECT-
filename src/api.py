@@ -175,6 +175,57 @@ def get_alerts(threshold_pct: float = 30.0):
     )
  
     return merged.to_dict(orient="records")
+
+@app.get("/api/performance")
+def get_performance():
+    """
+    So sánh dự báo hiện tại với CÙNG KỲ NĂM TRƯỚC (theo family, gộp tất cả
+    store lại). Trả về:
+        - items: mỗi family kèm current_avg, last_year_avg, change_pct, level
+        - summary: % ngành hàng "tốt" (level=good) vs "không tốt" (level=bad)
+    "Tốt" = dự báo kỳ này >= cùng kỳ năm trước. "Không tốt" = thấp hơn.
+    """
+    preds = _get_predictions()
+    history = _get_history()
+ 
+    if not len(preds):
+        return {"items": [], "summary": {}}
+ 
+    current = preds.groupby("family")["predicted_sales"].mean().reset_index()
+    current.columns = ["family", "current_avg"]
+ 
+    pred_dates = pd.to_datetime(preds["date"].unique())
+    last_year_dates = pred_dates - pd.DateOffset(years=1)
+    hist_window = history[history["date"].isin(last_year_dates)]
+    last_year = hist_window.groupby("family")["target"].mean().reset_index()
+    last_year.columns = ["family", "last_year_avg"]
+ 
+    merged = current.merge(last_year, on="family", how="left")
+    merged["last_year_avg"] = merged["last_year_avg"].fillna(0)
+ 
+    def _classify(row):
+        if row["last_year_avg"] <= 0:
+            change_pct = 0.0
+        else:
+            change_pct = (row["current_avg"] - row["last_year_avg"]) / row["last_year_avg"] * 100
+        level = "good" if change_pct >= 0 else "bad"
+        return pd.Series([change_pct, level])
+ 
+    merged[["change_pct", "level"]] = merged.apply(_classify, axis=1)
+    merged = merged.sort_values("change_pct", ascending=False)
+ 
+    total = len(merged)
+    good_count = int((merged["level"] == "good").sum())
+    bad_count = total - good_count
+    summary = {
+        "total_families": total,
+        "good_count": good_count,
+        "bad_count": bad_count,
+        "good_pct": round(good_count / total * 100, 1) if total else 0,
+        "bad_pct": round(bad_count / total * 100, 1) if total else 0,
+    }
+ 
+    return {"items": merged.to_dict(orient="records"), "summary": summary}
  
  
 @app.get("/health")
