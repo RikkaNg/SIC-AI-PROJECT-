@@ -1,0 +1,91 @@
+# ==============================================================================
+# 1. DỮ LIỆU & DATABASE (Data & Databases)
+# ==============================================================================
+# Chặn toàn bộ data thô và đã xử lý
+ml_training/data/raw/*
+ml_training/data/processed/*
+!ml_training/data/raw/.gitkeep
+!ml_training/data/processed/.gitkeep
+
+# Chặn mọi file dữ liệu dạng bảng/nặng
+*.csv
+*.parquet
+*.feather
+*.h5
+*.xlsx
+
+# Cơ sở dữ liệu SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# ==============================================================================
+# 2. MODEL ARTIFACTS & ML TRAINING RUNS
+# ==============================================================================
+# File trọng số model nặng
+*.pkl
+*.cbm
+*.joblib
+*.onnx
+*.pt
+*.pth
+
+# Log huấn luyện & thư mục sinh tự động của thư viện ML
+catboost_info/
+**/catboost_info/
+lightning_logs/
+wandb/
+*.log
+
+# ==============================================================================
+# 3. PYTHON & MÔI TRƯỜNG ẢO
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Môi trường ảo (Virtual Environments & Conda)
+venv/
+env/
+.venv/
+ENV/
+anaconda_projects/
+.conda/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==============================================================================
+# 4. FRONTEND (Node.js / React / Vite)
+# ==============================================================================
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+dist-ssr/
+*.local
+.pnpm-debug.log*
+
+# ==============================================================================
+# 5. BIẾN MÔI TRƯỜNG & BẢO MẬT (Secrets & Env)
+# ==============================================================================
+.env
+.env.*
+!.env.example
+
+# ==============================================================================
+# 6. IDE & HỆ ĐIỀU HÀNH (OS & Editors)
+# ==============================================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
