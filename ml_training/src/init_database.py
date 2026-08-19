@@ -1,10 +1,10 @@
 """
-init_database.py
+init_database.py (v2.5 - Production Ready)
 Khởi tạo SQLite DB (retail.db) cho Backend Gateway:
-- Khắc phục triệt để lỗi SQLite 'too many SQL variables' bằng executemany().
+- Tự động nạp file dự báo tối ưu nhất (submission_local.csv / submission_blend_hybrid.csv / submission_ensemble.csv).
+- Thay thế toàn bộ to_sql bằng executemany() để tối đa tốc độ ghi và kiểm soát RAM.
 - Đồng bộ đường dẫn xuất thẳng sang backend/src/database/retail.db.
-- Streaming nạp dữ liệu theo Chunk và Batch Insert kiểm soát RAM.
-- Tối ưu PRAGMA (WAL mode, async I/O, 64MB Cache) và Composite Indexing.
+- Tối ưu PRAGMA (WAL mode, async I/O, 64MB Cache) và Composite Indexing phục vụ AI Agent & API.
 """
 
 import sys
@@ -36,7 +36,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Cố định random seed để số liệu tồn kho giả lập nhất quán giữa các lần chạy
 np.random.seed(42)
 
 
@@ -52,7 +51,7 @@ def optimize_sqlite(conn: sqlite3.Connection):
 
 
 def init_schema(conn: sqlite3.Connection):
-    """Khởi tạo Schema bảng và hệ thống Index tăng tốc truy vấn API."""
+    """Khởi tạo Schema bảng và hệ thống Index tăng tốc truy vấn API / AI Agent."""
     logger.info(">>> Initializing database schema...")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS stores (
@@ -86,17 +85,27 @@ def init_schema(conn: sqlite3.Connection):
             PRIMARY KEY (store_nbr, item_nbr)
         );
 
-        -- Index phục vụ lọc nhanh theo thời gian và cửa hàng
+        CREATE TABLE IF NOT EXISTS historical_sales (
+            date TEXT,
+            store_nbr INTEGER,
+            item_nbr INTEGER,
+            unit_sales REAL,
+            onpromotion INTEGER
+        );
+
+        -- Index tổ hợp tăng tốc truy vấn API và AI Agent
         CREATE INDEX IF NOT EXISTS idx_forecasts_store_date ON forecasts(store_nbr, date);
         CREATE INDEX IF NOT EXISTS idx_forecasts_item ON forecasts(item_nbr);
         CREATE INDEX IF NOT EXISTS idx_forecasts_date ON forecasts(date);
         CREATE INDEX IF NOT EXISTS idx_inventory_store ON inventory(store_nbr);
+        CREATE INDEX IF NOT EXISTS idx_hist_store_date ON historical_sales(store_nbr, date);
+        CREATE INDEX IF NOT EXISTS idx_hist_item ON historical_sales(item_nbr);
     """)
     conn.commit()
 
 
 def ingest_stores_items(conn: sqlite3.Connection):
-    """Nạp danh mục stores và items (Giữ nguyên cấu trúc Schema và Primary Key)."""
+    """Nạp danh mục stores và items qua executemany."""
     logger.info(">>> Ingesting stores & items...")
 
     conn.execute("DELETE FROM stores")
@@ -104,29 +113,45 @@ def ingest_stores_items(conn: sqlite3.Connection):
     conn.commit()
 
     stores_df = pd.read_csv(RAW_DIR / "stores.csv")
-    stores_df.to_sql("stores", conn, if_exists="append", index=False)
+    conn.executemany(
+        "INSERT INTO stores (store_nbr, city, state, type, cluster) VALUES (?, ?, ?, ?, ?)",
+        stores_df[["store_nbr", "city", "state", "type", "cluster"]].itertuples(index=False, name=None)
+    )
 
     items_df = pd.read_csv(RAW_DIR / "items.csv")
-    items_df.to_sql("items", conn, if_exists="append", index=False)
+    conn.executemany(
+        "INSERT INTO items (item_nbr, family, class, perishable) VALUES (?, ?, ?, ?)",
+        items_df[["item_nbr", "family", "class", "perishable"]].itertuples(index=False, name=None)
+    )
+    conn.commit()
 
     logger.info(f"    Loaded {len(stores_df):,} stores and {len(items_df):,} items.")
 
 
+def resolve_submission_file() -> Path:
+    """Tự động ưu tiên chọn file dự báo có độ chính xác cao nhất."""
+    candidates = [
+        PROCESSED_DIR / "submission_blend_hybrid.csv",
+        PROCESSED_DIR / "submission_local.csv",
+        PROCESSED_DIR / "submission_ensemble.csv",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
 def ingest_forecasts(conn: sqlite3.Connection):
-    """
-    Nạp kết quả dự báo từ submission_ensemble.csv kết hợp test.csv.
-    Sử dụng executemany() để khắc phục triệt để giới hạn biến của SQLite.
-    """
-    sub_file = PROCESSED_DIR / "submission_ensemble.csv"
+    """Nạp kết quả dự báo SKU kết hợp metadata từ test.csv."""
+    sub_file = resolve_submission_file()
     test_file = RAW_DIR / "test.csv"
 
-    if not sub_file.exists():
-        logger.warning(f"    File '{sub_file.name}' not found. Please run predict.py first!")
+    if sub_file is None:
+        logger.warning("    No submission file found in processed directory. Please run predict_local.py first!")
         return
 
-    logger.info(f">>> Ingesting forecasts from {sub_file.name}...")
+    logger.info(f">>> Ingesting forecasts from '{sub_file.name}'...")
 
-    # Đọc test.csv để lấy mapping id -> (store_nbr, item_nbr, date)
     test_df = pd.read_csv(
         test_file,
         usecols=["id", "store_nbr", "item_nbr", "date"],
@@ -141,14 +166,13 @@ def ingest_forecasts(conn: sqlite3.Connection):
         VALUES (?, ?, ?, ?, ?)
     """
 
-    chunk_size = 200_000
+    chunk_size = 250_000
     total_rows = 0
 
     for chunk in pd.read_csv(sub_file, chunksize=chunk_size, dtype={"id": "int32", "unit_sales": "float32"}):
         merged = chunk.merge(test_df, on="id", how="left")
         merged = merged[["id", "store_nbr", "item_nbr", "date", "unit_sales"]]
 
-        # executemany + itertuples không bị dính giới hạn SQL variable limit
         conn.executemany(insert_sql, merged.itertuples(index=False, name=None))
         conn.commit()
 
@@ -159,24 +183,39 @@ def ingest_forecasts(conn: sqlite3.Connection):
 
 
 def generate_inventory(conn: sqlite3.Connection):
-    """Khởi tạo bảng tồn kho ngẫu nhiên (Vectorized bằng NumPy để đạt tốc độ cao)."""
-    logger.info(">>> Generating inventory...")
+    """Khởi tạo bảng tồn kho dựa trên Sales Velocity và Lead Time."""
+    logger.info(">>> Generating velocity-based inventory...")
     conn.execute("DELETE FROM inventory")
 
-    cursor = conn.execute("SELECT DISTINCT store_nbr, item_nbr FROM forecasts")
-    pairs = cursor.fetchall()
+    query = """
+        SELECT store_nbr, item_nbr, AVG(predicted_sales) as avg_daily_sales
+        FROM forecasts
+        GROUP BY store_nbr, item_nbr
+    """
+    df_pairs = pd.read_sql_query(query, conn)
 
-    if not pairs:
+    if df_pairs.empty:
         logger.warning("    No forecasts found. Skipping inventory generation.")
         return
 
-    n_pairs = len(pairs)
-    stocks = np.random.randint(10, 200, size=n_pairs)
-    leads = np.random.randint(1, 8, size=n_pairs)
+    n_pairs = len(df_pairs)
+    df_pairs["lead_time_days"] = np.random.randint(1, 8, size=n_pairs)
+
+    # 60% Bình thường, 20% Sắp hết (Understock), 20% Đọng vốn (Overstock)
+    states = np.random.choice([0, 1, 2], size=n_pairs, p=[0.6, 0.2, 0.2])
+
+    coverage_days = np.where(
+        states == 0, df_pairs["lead_time_days"] + 4,
+        np.where(states == 1, np.random.randint(1, 3, size=n_pairs),
+                 np.random.randint(30, 45, size=n_pairs))
+    )
+
+    df_pairs["current_stock"] = np.nan_to_num(df_pairs["avg_daily_sales"] * coverage_days)
+    df_pairs["current_stock"] = df_pairs["current_stock"].round(0).astype(int).clip(lower=0)
 
     batch = [
-        (pairs[i][0], pairs[i][1], int(stocks[i]), int(leads[i]))
-        for i in range(n_pairs)
+        (int(row["store_nbr"]), int(row["item_nbr"]), int(row["current_stock"]), int(row["lead_time_days"]))
+        for _, row in df_pairs.iterrows()
     ]
 
     conn.executemany(
@@ -184,16 +223,63 @@ def generate_inventory(conn: sqlite3.Connection):
         batch
     )
     conn.commit()
-    logger.info(f"    Generated inventory for {n_pairs:,} store-item pairs.")
+
+    understock_count = int((states == 1).sum())
+    overstock_count = int((states == 2).sum())
+    logger.info(f"    Inventory generated for {n_pairs:,} store-item pairs.")
+    logger.info(f"    Simulated states: {n_pairs - understock_count - overstock_count:,} Normal, {understock_count:,} Understock, {overstock_count:,} Overstock.")
+
+
+def ingest_historical_sales(conn: sqlite3.Connection):
+    """Nạp dữ liệu bán hàng lịch sử từ 2016 qua streaming executemany."""
+    logger.info(">>> Ingesting historical sales (from 2016)...")
+
+    conn.execute("DELETE FROM historical_sales")
+    conn.commit()
+
+    start_date_str = "2016-01-01"
+    dtypes = {
+        "date": "str",
+        "store_nbr": "int16",
+        "item_nbr": "int32",
+        "unit_sales": "float32",
+        "onpromotion": "float32"
+    }
+
+    insert_sql = """
+        INSERT INTO historical_sales (date, store_nbr, item_nbr, unit_sales, onpromotion)
+        VALUES (?, ?, ?, ?, ?)
+    """
+
+    chunk_size = 2_000_000
+    total_rows = 0
+
+    logger.info(">>> Streaming train.csv in chunks (filtering >= 2016-01-01)...")
+    for chunk in pd.read_csv(
+        RAW_DIR / "train.csv",
+        usecols=["date", "store_nbr", "item_nbr", "unit_sales", "onpromotion"],
+        dtype=dtypes,
+        chunksize=chunk_size
+    ):
+        c_hist = chunk[chunk["date"] >= start_date_str].copy()
+
+        if not c_hist.empty:
+            c_hist["onpromotion"] = c_hist["onpromotion"].fillna(0).astype(int)
+            c_hist["unit_sales"] = c_hist["unit_sales"].clip(lower=0)
+
+            conn.executemany(
+                insert_sql,
+                c_hist[["date", "store_nbr", "item_nbr", "unit_sales", "onpromotion"]].itertuples(index=False, name=None)
+            )
+            conn.commit()
+            total_rows += len(c_hist)
+            logger.info(f"    Inserted {total_rows:,} historical rows...")
+
+    logger.info(f"    Historical sales ingestion completed: {total_rows:,} rows.")
 
 
 # ====================== 4. ENTRYPOINT ======================
 def main(reset: bool = False):
-    """
-    Args:
-        reset: True = Xóa file DB vật lý và tạo lại hoàn toàn.
-               False = Giữ nguyên file DB, chỉ cập nhật/làm mới dữ liệu các bảng.
-    """
     if reset and DB_PATH.exists():
         DB_PATH.unlink()
         logger.info(">>> Removed existing database file.")
@@ -207,6 +293,7 @@ def main(reset: bool = False):
         ingest_stores_items(conn)
         ingest_forecasts(conn)
         generate_inventory(conn)
+        ingest_historical_sales(conn)
 
         cursor = conn.execute("SELECT COUNT(*) FROM forecasts")
         count = cursor.fetchone()[0]
