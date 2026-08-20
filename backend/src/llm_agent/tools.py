@@ -29,7 +29,7 @@ def get_db_connection():
 # 1. NHÓM THỐNG KÊ & SO SÁNH DOANH SỐ
 # ======================================================================
 
-def get_sales_summary(store_nbr: int = None, days: int = 7) -> dict:
+def get_sales_summary(store_nbr: int = None, days: int = 7) -> dict: # type: ignore
     """
     Tính tổng doanh số dự báo trong N ngày tới của một cửa hàng hoặc toàn hệ thống.
         Args:
@@ -55,7 +55,7 @@ def get_sales_summary(store_nbr: int = None, days: int = 7) -> dict:
 
         query += " GROUP BY item_nbr ORDER BY total_sales DESC"
 
-        df = pd.read_sql_query(query, conn, params=params)
+        df = pd.read_sql_query(query, conn, params=tuple(params))
         conn.close()
 
         if df.empty:
@@ -98,7 +98,7 @@ def check_stockout_risk(store_nbr: int) -> dict:
                 HAVING forecast_demand > i.current_stock
                 ORDER BY (forecast_demand - i.current_stock) DESC LIMIT 10 \
                 """
-        df = pd.read_sql_query(query, conn, params=[store_nbr])
+        df = pd.read_sql_query(query, conn, params=(store_nbr,))
         conn.close()
 
         if df.empty:
@@ -295,7 +295,7 @@ def evaluate_stockout_loss(store_nbr: int, item_nbr: int, out_of_stock_days: int
 # MAPPING DICTIONARY CHO LLM AGENT
 # ======================================================================
 # Khai báo các hàm ở trên thành dạng mapping để file Agent (câu sau) dễ dàng gọi
-AVAILABLE_TOOLS = {
+AVAILABLE_FUNCTIONS = {
     "get_sales_summary": get_sales_summary,
     "check_stockout_risk": check_stockout_risk,
     "calculate_reorder_point": calculate_reorder_point,
@@ -319,3 +319,109 @@ if __name__ == "__main__":
     # Test 3: Tính ROP cho item 1041 tại store 25
     print("\n3. Calculate Reorder Point (Store 25, Item 1041):")
     print(calculate_reorder_point(store_nbr=25, item_nbr=1041))
+
+TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sales_summary",
+            "description": "Tính tổng doanh số dự báo trong N ngày tới của một cửa hàng hoặc toàn hệ thống.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng (Nếu không nhập sẽ lấy toàn hệ thống)"},
+                    "days": {"type": "integer", "description": "Số ngày dự báo muốn tính (mặc định 7 ngày)", "default": 7}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_stockout_risk",
+            "description": "Kiểm tra các mặt hàng có rủi ro cháy hàng (hết kho) trong 16 ngày tới tại 1 cửa hàng.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng cần kiểm tra"}
+                },
+                "required": ["store_nbr"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate_reorder_point",
+            "description": "Tính Điểm đặt hàng lại (Reorder Point - ROP) và Tồn kho an toàn (Safety Stock) cho 1 mặt hàng.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng"},
+                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng"}
+                },
+                "required": ["store_nbr", "item_nbr"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "simulate_demand_multiplier",
+            "description": "Mô phỏng kịch bản doanh số tăng/giảm (VD: x1.5 nếu có khuyến mãi, x0.8 nếu suy thoái).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng"},
+                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng"},
+                    "multiplier": {"type": "number", "description": "Hệ số nhân (VD: 1.5 = tăng 50%)"}
+                },
+                "required": ["store_nbr", "item_nbr", "multiplier"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_transaction_anomaly",
+            "description": "Đánh giá xem một giao dịch thực tế là tích cực (bán đột biến) hay tiêu cực (sụt giảm) so với dự báo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expected_sales": {"type": "number", "description": "Doanh số dự báo kỳ vọng"},
+                    "actual_sales": {"type": "number", "description": "Doanh số thực tế xảy ra"}
+                },
+                "required": ["expected_sales", "actual_sales"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "evaluate_stockout_loss",
+            "description": "Đánh giá thiệt hại doanh thu tiềm năng do một mặt hàng bị cháy hàng (Out of Stock).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng"},
+                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng"},
+                    "out_of_stock_days": {"type": "integer", "description": "Số ngày mặt hàng bị hết kho"}
+                },
+                "required": ["store_nbr", "item_nbr", "out_of_stock_days"]
+            }
+        }
+    }
+]
+
+# ==========================================
+# MAPPING DICTIONARY
+# ==========================================
+# Đảm bảo tên biến này là AVAILABLE_FUNCTIONS
+AVAILABLE_FUNCTIONS = {
+    "get_sales_summary": get_sales_summary,
+    "check_stockout_risk": check_stockout_risk,
+    "calculate_reorder_point": calculate_reorder_point,
+    "simulate_demand_multiplier": simulate_demand_multiplier,
+    "analyze_transaction_anomaly": analyze_transaction_anomaly,
+    "evaluate_stockout_loss": evaluate_stockout_loss
+}

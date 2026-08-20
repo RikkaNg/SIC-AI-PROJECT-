@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # ==========================
+  # 1. ML INFERENCE SERVICE
+  # ==========================
+  ml_service:
+    build:
+      context: .
+      dockerfile: ml_service/Dockerfile
+    container_name: sic_ml_service
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount thư mục models để không phải build lại image khi update model
+      - ./ml_service/models:/app/ml_service/models
+    networks:
+      - sic_network
+
+  # ==========================
+  # 2. BACKEND API GATEWAY
+  # ==========================
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: sic_backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Lấy key từ file .env ở thư mục gốc
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      # Quan trọng: Gọi sang ML service bằng tên container, không dùng localhost
+      - ML_SERVICE_URL=http://ml_service:8001
+    volumes:
+      # Lưu lại file SQLite để dữ liệu không bị xóa khi tắt container
+      - ./backend/src/database/retail.db:/app/backend/src/database/retail.db
+    depends_on:
+      - ml_service
+    networks:
+      - sic_network
+
+  # ==========================
+  # 3. FRONTEND (Streamlit/React)
+  # ==========================
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: sic_frontend
+    ports:
+      - "8501:8501" # Giả sử dùng Streamlit port 8501
+    environment:
+      # Frontend gọi sang backend bằng tên container
+      - API_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - sic_network
+
+# Khai báo mạng nội bộ để các container giao tiếp được với nhau
+networks:
+  sic_network:
+    driver: bridge

@@ -2,17 +2,15 @@
 import os
 import logging
 from groq import Groq
+from dotenv import load_dotenv
 
+load_dotenv() # Tự động đọc file .env ở thư mục gốc
 logger = logging.getLogger(__name__)
 
-# Lấy API key từ biến môi trường
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
-    logger.warning("GROQ_API_KEY chưa được set trong biến môi trường!")
+    logger.warning("GROQ_API_KEY chưa được set!")
 
-# Khởi tạo Groq Client
 client = Groq(api_key=GROQ_API_KEY)
-
-# Model của Groq hỗ trợ Function Calling tốt nhất
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODEL_NAME = "llama-3.1-8b-instant"
