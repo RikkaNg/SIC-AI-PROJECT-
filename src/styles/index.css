@@ -1,0 +1,57 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+:root {
+    --background: #f8fafc !important;
+    /* Nền trắng xám */
+    --foreground: #0f172a !important;
+    /* Chữ đen */
+    --card: #ffffff !important;
+    /* Nền thẻ trắng */
+    --card-foreground: #0f172a !important;
+    --popover: #ffffff !important;
+    --popover-foreground: #0f172a !important;
+    --primary: #2563eb !important;
+    /* Xanh dương đậm */
+    --primary-foreground: #ffffff !important;
+    /* Chữ trên nền xanh */
+    --secondary: #f1f5f9 !important;
+    --secondary-foreground: #0f172a !important;
+    --muted: #f1f5f9 !important;
+    /* Nền xám nhạt cho khung chat/bảng */
+    --muted-foreground: #64748b !important;
+    /* Chữ xám */
+    --accent: #eff6ff !important;
+    --accent-foreground: #2563eb !important;
+    --destructive: #ef4444 !important;
+    --destructive-foreground: #ffffff !important;
+    --border: #e2e8f0 !important;
+    /* Viền xám nhạt */
+    --input: #e2e8f0 !important;
+    --ring: #2563eb !important;
+
+    /* Map cho sidebar */
+    --sidebar: #ffffff !important;
+    --sidebar-foreground: #0f172a !important;
+    --sidebar-border: #e2e8f0 !important;
+    --sidebar-accent: #f1f5f9 !important;
+}
+
+/* Đảm bảo body lấy đúng màu nền */
+body,
+html,
+.bg-background {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+}
+
+/* Đổi màu các đường lưới trong biểu đồ từ đen sang xám nhạt */
+.recharts-cartesian-grid line {
+    stroke: #e2e8f0 !important;
+}
+
+/* Đổi màu chữ trục biểu đồ */
+.recharts-text {
+    fill: #64748b !important;
+}
