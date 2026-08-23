@@ -1,0 +1,75 @@
+services:
+  # ==========================================
+  # 1. ML SERVICE (FastAPI - 33 Local Models & Routing)
+  # ==========================================
+  ml_service:
+    build:
+      context: .
+      dockerfile: ./ml_service/Dockerfile
+    container_name: retail_ml_service
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ml_service/models:/app/ml_service/models:ro
+      - ./ml_training/models:/app/ml_training/models:ro
+      - ./ml_training/src:/app/ml_training/src:ro
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+    networks:
+      - retail_network
+
+  # ==========================================
+  # 2. BACKEND GATEWAY (FastAPI + Groq Cloud LLM Agent)
+  # ==========================================
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: retail_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/src:/app/backend/src
+    environment:
+      - ML_SERVICE_URL=http://ml_service:8001
+      - DB_PATH=/app/backend/src/database/retail.db
+      # Cấu hình Groq Cloud LLM API (Qwen 3.6 - qwen3-32b đã bị Groq ngừng phục vụ)
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen/qwen3.6-27b}
+      - LLM_REASONING_EFFORT=${LLM_REASONING_EFFORT:-}
+    depends_on:
+      ml_service:
+        condition: service_healthy
+    restart: always
+    networks:
+      - retail_network
+
+  # ==========================================
+  # 3. FRONTEND (React/Vite Web Dashboard qua nginx)
+  # ==========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    container_name: retail_frontend
+    ports:
+      - "8501:80"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - retail_network
+
+# ==========================================
+# CẤU HÌNH MẠNG
+# ==========================================
+networks:
+  retail_network:
+    driver: bridge

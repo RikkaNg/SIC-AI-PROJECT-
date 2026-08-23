@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+httpx
+groq
+pandas
+python-dotenv
+pyjwt

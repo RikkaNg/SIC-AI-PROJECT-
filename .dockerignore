@@ -1,0 +1,33 @@
+# .dockerignore - áp dụng cho mọi docker build (context là gốc dự án)
+
+# Git & IDE & môi trường local
+.git
+.idea
+.vscode
+.conda
+.venv
+.tmp
+anaconda_projects
+
+# Database SQLite lớn - runtime dùng volume mount, không bake vào image
+backend/src/database/*.db
+backend/src/database/*.db-wal
+backend/src/database/*.db-shm
+
+# Node: tuyệt đối không copy node_modules Windows vào container Linux
+frontend/node_modules
+frontend/dist
+
+# Dữ liệu thô khổng lồ của training (không cần trong image)
+ml_training/data/raw
+ml_training/data/processed
+ml_training/notebook
+
+# Model weights: ml_service nạp qua volume mount lúc runtime
+ml_service/models
+ml_training/models
+
+# Rác sinh ra
+**/__pycache__
+*.pyc
+*.log

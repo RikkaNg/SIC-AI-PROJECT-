@@ -82,6 +82,7 @@ def init_schema(conn: sqlite3.Connection):
             item_nbr INTEGER,
             current_stock REAL,
             lead_time_days INTEGER,
+            last_updated TIMESTAMP,
             PRIMARY KEY (store_nbr, item_nbr)
         );
 
@@ -278,6 +279,48 @@ def ingest_historical_sales(conn: sqlite3.Connection):
     logger.info(f"    Historical sales ingestion completed: {total_rows:,} rows.")
 
 
+def build_sales_aggregate(conn: sqlite3.Connection):
+    """
+    Dựng bảng tổng hợp doanh số 2016 theo (store_nbr, item_nbr) cho API sản phẩm.
+    Bảng agg_item_store_sales giúp /api/top-products, /api/products, /api/family-mix
+    chạy tức thì thay vì GROUP BY trực tiếp trên ~59 triệu dòng historical_sales.
+    (Đồng bộ logic với backend/scripts/build_sales_cache.py)
+    """
+    logger.info(">>> Building sales aggregate (agg_item_store_sales)...")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS agg_item_store_sales (
+            store_nbr INTEGER NOT NULL,
+            item_nbr  INTEGER NOT NULL,
+            unit_sales REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (store_nbr, item_nbr)
+        ) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS idx_agg_item ON agg_item_store_sales(item_nbr);
+    """)
+    conn.commit()
+
+    stores = [int(r[0]) for r in conn.execute(
+        "SELECT DISTINCT store_nbr FROM historical_sales ORDER BY store_nbr"
+    ).fetchall()]
+    total_rows = 0
+    for i, store in enumerate(stores, 1):
+        cur = conn.execute("""
+            DELETE FROM agg_item_store_sales WHERE store_nbr = ?;
+        """, (store,))
+        cur = conn.execute("""
+            INSERT INTO agg_item_store_sales (store_nbr, item_nbr, unit_sales)
+            SELECT ?, item_nbr, SUM(unit_sales)
+            FROM historical_sales
+            WHERE store_nbr = ?
+            GROUP BY item_nbr
+        """, (store, store))
+        conn.commit()
+        total_rows += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        if i % 10 == 0 or i == len(stores):
+            logger.info(f"    Aggregate progress: {i}/{len(stores)} stores, {total_rows:,} rows")
+
+    logger.info(f"    Sales aggregate built: {total_rows:,} store-item rows.")
+
+
 # ====================== 4. ENTRYPOINT ======================
 def main(reset: bool = False):
     if reset and DB_PATH.exists():
@@ -294,6 +337,7 @@ def main(reset: bool = False):
         ingest_forecasts(conn)
         generate_inventory(conn)
         ingest_historical_sales(conn)
+        build_sales_aggregate(conn)
 
         cursor = conn.execute("SELECT COUNT(*) FROM forecasts")
         count = cursor.fetchone()[0]

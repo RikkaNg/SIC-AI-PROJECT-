@@ -7,7 +7,12 @@ SIC-AI-PROJECT/
 │   │   ├── database/                # Nơi lưu trữ DB SQLite & kết nối
 │   │   │   ├── connection.py        # Quản lý connection SQLite WAL mode
 │   │   │   └── retail.db            # File SQLite Database
-│   │   ├── llm_agent/               # Toàn bộ logic LLM Agent (Groq Qwen 3.6)
+│   │   ├── llm_agent/               # Toàn bộ logic LLM Agent (Groq Qwen 3 - qwen/qwen3-32b)
+│   │   ├── security.py              # Auth JWT/API-key + Row-Level Isolation theo cửa hàng
+│   │   ├── scripts/init_auth.py     # Tạo auth.db + seed user (admin / manager1 / manager2)
+│   │   └── database/
+│   │       ├── retail.db            # Dữ liệu bán lẻ (SQLite WAL)
+│   │       └── auth.db              # User + quyền store_nbr (tách riêng để không mất khi re-init)
 │   │   │   ├── config.py            # Khởi tạo Groq Client
 │   │   │   ├── prompts.py           # Quản lý System Prompts chuỗi cung ứng
 │   │   │   ├── tools.py             # Function calling (Truy vấn DB, tính toán tồn kho)
@@ -48,7 +53,7 @@ SIC-AI-PROJECT/
 │   │   └── init_database.py         # Script nạp dữ liệu lịch sử & dự báo vào retail.db
 │   └── requirements.txt
 │
-├── frontend/                        # Giao diện người dùng (Streamlit hoặc React/Vue)
+├── frontend/                        # Giao diện người dùng (React/Vite + Tailwind, build bằng Dockerfile & nginx)
 │   ├── src/
 │   ├── requirements.txt (hoặc package.json)
 │   └── Dockerfile
@@ -57,3 +62,33 @@ SIC-AI-PROJECT/
 ├── .env                             # Chứa GROQ_API_KEY (Không commit lên Git)
 ├── .gitignore
 └── README.md
+
+## API sản phẩm (SKU cụ thể - dữ liệu thật từ retail.db)
+
+| Endpoint | Mô tả |
+|---|---|
+| `GET /api/products` | Danh mục 4.100 sản phẩm thật: tồn kho, tổng bán 2016, trạng thái; hỗ trợ `search`, `family`, `status`, `sort`, phân trang server-side |
+| `GET /api/top-products` | Top sản phẩm bán chạy theo **item_nbr cụ thể** (doanh số 2016), lọc theo cửa hàng |
+| `GET /api/family-mix` | Thị phần doanh số theo nhóm hàng (pie chart) |
+| `GET /api/family-trend` | Chuỗi dự báo theo ngày × nhóm hàng từ model LightGBM |
+| `GET /api/product-families` | Danh sách nhóm hàng cho dropdown lọc |
+
+Tất cả đều áp Row-Level Isolation theo phạm vi cửa hàng của user.
+
+### Bảng tổng hợp cache (BẮT BUỘC chạy 1 lần sau khi init DB)
+
+Các endpoint trên đọc bảng tổng hợp để phản hồi <1s thay vì quét ~59 triệu dòng historical_sales:
+
+```bash
+python backend/scripts/build_sales_cache.py   # dựng agg_item_store_sales + agg_forecast_date_family (~60s)
+```
+
+`ml_training/src/init_database.py` cũng tự dựng 2 bảng này mỗi lần init DB.
+
+### LLM Chatbot
+
+- Model mặc định đã đổi sang **`qwen/qwen3.6-27b`** vì `qwen/qwen3-32b` bị Groq ngừng phục vụ
+  (API trả 404 `model_not_found` → backend 500 → frontend báo lỗi fetch). Đổi model khác qua `LLM_MODEL_NAME` trong `.env`.
+- Lỗi LLM giờ trả về HTTP 502 kèm `detail` tiếng Việt rõ ràng thay vì 500 trống không thông tin.
+- Sau khi đổi `.env`, cần **restart/recreate container backend** (`docker compose up -d --force-recreate backend`)
+  hoặc khởi động lại uvicorn để nhận model mới và các route sản phẩm mới.

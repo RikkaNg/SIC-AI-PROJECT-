@@ -36,7 +36,7 @@ catboost_info/
 lightning_logs/
 wandb/
 *.log
-
+frondend2/
 # ==============================================================================
 # 3. PYTHON & MÔI TRƯỜNG ẢO
 # ==============================================================================
@@ -49,6 +49,7 @@ __pycache__/
 # Môi trường ảo (Virtual Environments & Conda)
 venv/
 env/
+env.example/
 .venv/
 ENV/
 anaconda_projects/
