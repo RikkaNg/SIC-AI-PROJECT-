@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import type { ReactNode, ElementType } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import Papa from "papaparse";
+import type { ReactNode, ElementType, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import {
   AreaChart, Area, ComposedChart, Line,
+  BarChart, Bar, LineChart,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
@@ -11,6 +13,7 @@ import {
   Bell, Menu, LogOut,
   MapPin, RefreshCw,
   ArrowUpRight, ArrowDownRight, Building2, PackagePlus,
+  Zap,
 } from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────── */
@@ -32,11 +35,20 @@ interface TopProduct {
   perishable: number;
   unit_sales: number;
   share_pct: number;
+  abc_class?: string | null;
 }
 
 interface PieDatum {
   name: string;
   value: number;
+}
+
+/** Một dòng trong /sale_dataset_ver_2.csv (dataset lịch sử tĩnh) */
+interface RawSaleData {
+  date: string;
+  family: string;
+  unit_sales: number | null;
+  perishable?: number | null;
 }
 
 /** Dòng danh mục sản phẩm thật từ /api/products */
@@ -48,6 +60,12 @@ interface ProductItem {
   stock: number;
   sold_2016: number;
   status: "active" | "outofstock";
+  /** Phân loại ABC theo tỷ trọng cộng dồn doanh số lịch sử (A<=80%, B<=95%, C còn lại) */
+  abc_class?: string | null;
+  /** Tổng dự báo 16 ngày tới của SKU (toàn chuỗi) + dải tin cậy 1σ theo RMSLE family */
+  fc_total_16d?: number | null;
+  fc_low?: number | null;
+  fc_high?: number | null;
 }
 
 interface ProductsResponse {
@@ -100,6 +118,16 @@ function restoreAuth(): AuthInfo | null {
     return a;
   } catch {
     return null;
+  }
+}
+
+/* ── ABC badge (phân loại SKU theo tỷ trọng doanh số cộng dồn) ── */
+function abcBadgeClass(c?: string | null): string {
+  switch (c) {
+    case "A": return "bg-blue-500/15 text-blue-600 border-blue-500/25";
+    case "B": return "bg-amber-500/15 text-amber-600 border-amber-500/25";
+    case "C": return "bg-slate-100 text-slate-400 border-slate-200";
+    default: return "";
   }
 }
 
@@ -272,14 +300,63 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
   branchId: string; apiBase: string; auth: AuthInfo; onAuthError: () => void;
 }) {
   const [liveChart, setLiveChart] = useState<Array<{ date: string; dubao: number }> | null>(null);
-  const [liveKpi, setLiveKpi] = useState<{ total: string; avgPerDay: string } | null>(null);
+  const [liveKpi, setLiveKpi] = useState<{ total: string; avgPerDay: string; days: number | null } | null>(null);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [topErr, setTopErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [apiOk, setApiOk] = useState(false);
   const [apiErr, setApiErr] = useState("");
 
+  // Bộ lọc ngành hàng + mốc thời gian
+  const [family, setFamily] = useState("all");
+  const [rangeMode, setRangeMode] = useState<"all" | 7 | 14 | 30 | "custom">("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [families, setFamilies] = useState<string[]>([]);
+  const [meta, setMeta] = useState<{ from: string; to: string } | null>(null);
+
   const isRealStore = branchId === "all" || /^\d+$/.test(branchId);
+
+  // Danh sách ngành hàng cho dropdown (lấy một lần khi mở view)
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(apiBase, "/api/product-families", auth)
+      .then((res) => {
+        if (res.status === 401) { onAuthError(); return Promise.reject(); }
+        return res.ok ? res.json() : Promise.reject();
+      })
+      .then((list) => { if (!cancelled && Array.isArray(list)) setFamilies(list); })
+      .catch(() => { /* dropdown rỗng vẫn xem được tổng hợp */ });
+    return () => { cancelled = true; };
+  }, [apiBase, auth, onAuthError]);
+
+  // Biên thời gian dữ liệu dự báo theo cửa hàng đang chọn
+  useEffect(() => {
+    if (!isRealStore) { setMeta(null); return; }
+    let cancelled = false;
+    const storeParam = branchId !== "all" ? `?store_nbr=${branchId}` : "";
+    apiFetch(apiBase, `/api/forecast-meta${storeParam}`, auth)
+      .then((res) => {
+        if (res.status === 401) { onAuthError(); return Promise.reject(); }
+        return res.ok ? res.json() : Promise.reject();
+      })
+      .then((m) => { if (!cancelled && m?.date_from && m?.date_to) setMeta({ from: m.date_from, to: m.date_to }); })
+      .catch(() => { if (!cancelled) setMeta(null); });
+    return () => { cancelled = true; };
+  }, [branchId, apiBase, auth, isRealStore, onAuthError]);
+
+  // Tính khoảng ngày hiệu lực theo chip mốc thời gian đang chọn
+  useEffect(() => {
+    if (!meta) return;
+    if (rangeMode === "all") { setFromDate(""); setToDate(""); return; }
+    if (rangeMode === "custom") return; // người dùng tự nhập
+    const startMs = Date.parse(meta.from + "T00:00:00Z");
+    const endBoundMs = Date.parse(meta.to + "T00:00:00Z");
+    if (Number.isNaN(startMs)) return;
+    const endMs = Math.min(startMs + ((rangeMode as number) - 1) * 86400000, Number.isNaN(endBoundMs) ? Infinity : endBoundMs);
+    setFromDate(meta.from);
+    setToDate(new Date(endMs).toISOString().slice(0, 10));
+  }, [rangeMode, meta]);
 
   // Top sản phẩm bán chạy (SKU cụ thể) theo phạm vi cửa hàng đang chọn
   useEffect(() => {
@@ -309,11 +386,16 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
       setLoading(true);
       setApiErr("");
       try {
-        const storeParam = branchId !== "all" ? `?store_nbr=${branchId}` : "";
-        const kpiParam = branchId !== "all" ? `?store_nbr=${branchId}` : "";
+        const q = new URLSearchParams();
+        if (branchId !== "all") q.set("store_nbr", branchId);
+        if (family !== "all") q.set("family", family);
+        if (fromDate) q.set("date_from", fromDate);
+        if (toDate) q.set("date_to", toDate);
+        const qs = q.toString();
+        const suffix = qs ? `?${qs}` : "";
         const [predsRes, kpiRes] = await Promise.all([
-          apiFetch(apiBase, `/api/predictions${storeParam}`, auth),
-          apiFetch(apiBase, `/api/kpi${kpiParam}`, auth),
+          apiFetch(apiBase, `/api/predictions${suffix}`, auth),
+          apiFetch(apiBase, `/api/kpi${suffix}`, auth),
         ]);
         if (predsRes.status === 401 || kpiRes.status === 401) { onAuthError(); return; }
         if (!predsRes.ok || !kpiRes.ok) {
@@ -336,6 +418,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
         setLiveKpi({
           total: fmt(kpiData.total_predicted_sales),
           avgPerDay: fmt(kpiData.avg_per_day),
+          days: typeof kpiData.forecast_days === "number" ? kpiData.forecast_days : null,
         });
         setApiOk(true);
       } catch (e: any) {
@@ -351,7 +434,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
     return () => {
       cancelled = true;
     };
-  }, [branchId, apiBase, auth, isRealStore, onAuthError]);
+  }, [branchId, apiBase, auth, isRealStore, onAuthError, family, fromDate, toDate]);
 
   const chartData = liveChart ?? [];
 
@@ -378,15 +461,73 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
     );
   }
 
+  const familyLabel = family === "all" ? "Tất cả ngành hàng" : family;
+  const rangeLabel = rangeMode !== "all" && fromDate && toDate
+    ? `${formatDateVN(fromDate)} → ${formatDateVN(toDate)}`
+    : "Toàn kỳ dự báo";
+
   return (
     <div className="space-y-5">
       <SectionHeader title="Dự báo doanh số" sub="Phân tích & dự báo doanh thu theo thời gian thực — Nguồn: model LightGBM thật" />
 
+      {/* Bộ lọc ngành hàng + mốc thời gian */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <label className="flex items-center gap-2 text-xs text-slate-500">
+          <Package size={12} className="text-slate-400 shrink-0" />
+          Ngành hàng
+          <select
+            value={family}
+            onChange={(e) => setFamily(e.target.value)}
+            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-blue-500/40 max-w-[220px]"
+          >
+            <option value="all">Tất cả ngành hàng</option>
+            {families.map((f) => (<option key={f} value={f}>{f}</option>))}
+          </select>
+        </label>
+        <div className="flex gap-1.5 flex-wrap">
+          {([["all", "Toàn kỳ"], [7, "7 ngày"], [14, "14 ngày"], [30, "30 ngày"], ["custom", "Tùy chỉnh"]] as [string | number, string][]).map(([mode, label]) => (
+            <button
+              key={String(mode)}
+              onClick={() => setRangeMode(mode as typeof rangeMode)}
+              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${rangeMode === mode ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {rangeMode === "custom" && (
+          <>
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              Từ ngày
+              <input type="date" value={fromDate} min={meta?.from || undefined} max={meta?.to || undefined}
+                onChange={(e) => setFromDate(e.target.value)} disabled={!meta}
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              Đến ngày
+              <input type="date" value={toDate} min={meta?.from || undefined} max={meta?.to || undefined}
+                onChange={(e) => setToDate(e.target.value)} disabled={!meta}
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+            </label>
+            {(fromDate || toDate) && (
+              <button
+                onClick={() => { setFromDate(""); setToDate(""); }}
+                className="text-xs text-slate-400 hover:text-blue-600 underline underline-offset-2 transition-colors"
+              >
+                Xóa khoảng
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {liveKpi && (
           <>
-            <StatCard label="Tổng dự báo (toàn kỳ)" value={liveKpi.total} sub="Đơn vị: số lượng bán" trend="up" color="blue" />
-            <StatCard label="Trung bình mỗi ngày" value={liveKpi.avgPerDay} sub="Gộp tất cả ngành hàng" trend="up" color="green" />
+            <StatCard label={`Tổng dự báo (${rangeLabel})`} value={liveKpi.total}
+              sub={`Ngành hàng: ${familyLabel}`} trend="up" color="blue" />
+            <StatCard label="Trung bình mỗi ngày" value={liveKpi.avgPerDay}
+              sub={`Theo bộ lọc hiện tại · ${liveKpi.days ?? "..."} ngày`} trend="up" color="green" />
           </>
         )}
       </div>
@@ -396,7 +537,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-sm font-semibold text-slate-900">Dự báo doanh số theo ngày</p>
-              <p className="text-[10px] font-mono text-slate-500 mt-0.5">Tổng tất cả ngành hàng</p>
+              <p className="text-[10px] font-mono text-slate-500 mt-0.5">{familyLabel} · {rangeLabel}</p>
             </div>
             <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
               <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-purple-500 rounded inline-block" />Dự báo</span>
@@ -440,6 +581,11 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
                       <span className={`font-mono text-[9px] w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${i === 0 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{p.rank}</span>
                       <span className="font-mono font-medium">#{p.item_nbr}</span>
                       <span className="text-[10px] font-mono text-slate-400 truncate">{p.family}</span>
+                      {p.abc_class && (
+                        <span className={`text-[9px] font-mono px-1 rounded border flex-shrink-0 ${abcBadgeClass(p.abc_class)}`} title={`Lớp ${p.abc_class} theo tỷ trọng doanh số cộng dồn`}>
+                          {p.abc_class}
+                        </span>
+                      )}
                     </span>
                     <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">{p.share_pct}%</span>
                   </div>
@@ -713,6 +859,9 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     return () => { cancelled = true; };
   }, [branchId, apiBase, auth, onAuthError, trendDays]);
 
+  // Ngày cuối cùng thực tế của cửa sổ đang chọn (backend có thể trả ít điểm hơn kỳ gốc)
+  const winLastDate: string = trendRows.length ? String((trendRows[trendRows.length - 1] as any).date || "") : "";
+
   // ── Dữ liệu bán hàng LỊCH SỬ (dataset tổng toàn chuỗi trong public/) ──
   const [histRows, setHistRows] = useState<RawSaleData[]>([]);
   useEffect(() => {
@@ -914,7 +1063,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
       {/* KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
-          label={`Tổng dự báo ${horizon ? `(${horizon.from.slice(5)} → ${horizon.to.slice(5)})` : ""}`}
+          label={`Tổng dự báo ${horizon ? `(${horizon.from.slice(5)} → ${(winLastDate || horizon.to).slice(5)})` : ""}`}
           value={totalForecast != null ? fmt(totalForecast) : "—"}
           sub="Đơn vị số lượng bán" trend="up" color="blue"
         />
@@ -941,7 +1090,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
           <div>
             <p className="text-sm font-semibold text-slate-900">Xu hướng dự báo theo danh mục</p>
             <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-              Đơn vị: số lượng bán / ngày — model LightGBM{horizon ? `, kỳ ${horizon.from} → ${horizon.to}` : ""}
+              Đơn vị: số lượng bán / ngày — model LightGBM{horizon ? `, kỳ ${horizon.from} → ${(winLastDate || horizon.to)}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -1424,17 +1573,23 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
                 <th className="text-right px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
                   <button className="flex items-center gap-1 ml-auto hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("sold")}>Bán 2016 <SortIcon k="sold" /></button>
                 </th>
+                <th className="text-right px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider" title="Tổng dự báo 16 ngày tới (toàn chuỗi) — dải tin cậy 1σ theo RMSLE của family">
+                  Dự báo 16N
+                </th>
+                <th className="text-center px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider" title="A: nhóm chiếm 80% doanh số · B: đến 95% · C: dài đuôi">
+                  Lớp ABC
+                </th>
                 <th className="text-center px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Trạng thái</th>
                 {branchId !== "all" && <th className="px-4 py-3" />}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={branchId !== "all" ? 8 : 7} className="text-center py-8 text-slate-500 text-sm">
+                <tr><td colSpan={branchId !== "all" ? 10 : 9} className="text-center py-8 text-slate-500 text-sm">
                   <RefreshCw size={14} className="animate-spin inline mr-2" />Đang tải...
                 </td></tr>
               ) : products.length === 0 ? (
-                <tr><td colSpan={branchId !== "all" ? 8 : 7} className="text-center py-8 text-slate-500 text-sm">Không có sản phẩm nào khớp bộ lọc.</td></tr>
+                <tr><td colSpan={branchId !== "all" ? 10 : 9} className="text-center py-8 text-slate-500 text-sm">Không có sản phẩm nào khớp bộ lọc.</td></tr>
               ) : products.map((p) => (
                 <tr key={p.item_nbr} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3"><span className="text-xs font-mono font-medium text-slate-900">#{p.item_nbr}</span></td>
@@ -1454,6 +1609,19 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-xs font-mono text-slate-700">{Math.round(p.sold_2016).toLocaleString("vi-VN")}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-xs font-mono text-purple-600">{p.fc_total_16d != null ? Math.round(p.fc_total_16d).toLocaleString("vi-VN") : "—"}</span>
+                    {p.fc_low != null && p.fc_high != null && (
+                      <p className="text-[9px] font-mono text-slate-400 mt-0.5">
+                        {Math.round(p.fc_low).toLocaleString("vi-VN")}–{Math.round(p.fc_high).toLocaleString("vi-VN")}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {p.abc_class
+                      ? <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${abcBadgeClass(p.abc_class)}`}>{p.abc_class}</span>
+                      : <span className="text-[10px] font-mono text-slate-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-center">{statusBadge(p.status)}</td>
                   {branchId !== "all" && (
@@ -1674,7 +1842,7 @@ function Sidebar({
   view, setView, open, user, onLogout,
 }: {
   view: View; setView: (v: View) => void; open: boolean;
-  user: { displayName: string; role: string } | null;
+  user: { displayName: string; role: string; username?: string } | null;
   onLogout: () => void;
 }) {
   return (
@@ -1735,11 +1903,25 @@ function Sidebar({
 }
 
 /* ── App ──────────────────────────────────────────────────────── */
+// apiBase mặc định theo ngữ cảnh trang:
+// - chạy qua nginx docker (:8501 hoặc origin khác) -> dùng cùng origin (nginx đã proxy /api)
+// - chạy dev server Vite (5173/4173/3000) -> gọi thẳng backend localhost:8000
+const DEV_PORTS = ["5173", "4173", "3000"];
+function defaultApiBase(): string {
+  try {
+    if (typeof window !== "undefined" && window.location?.port
+        && !DEV_PORTS.includes(window.location.port)) {
+      return window.location.origin;
+    }
+  } catch { /* bỏ qua - fallback bên dưới */ }
+  return "http://localhost:8000";
+}
+
 export default function App() {
   const [view, setView] = useState<View>("sales");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [branchId, setBranchId] = useState("all");
-  const [apiBase, setApiBase] = useState("http://localhost:8000");
+  const [apiBase, setApiBase] = useState(defaultApiBase);
   const [liveStores, setLiveStores] = useState<number[] | null>(null);
 
   // ── Auth state (Row-Level Isolation) ──

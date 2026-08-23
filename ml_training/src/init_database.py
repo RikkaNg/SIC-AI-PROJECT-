@@ -339,6 +339,16 @@ def main(reset: bool = False):
         ingest_historical_sales(conn)
         build_sales_aggregate(conn)
 
+        # Bổ sung: dựng bảng sku_stats + model_meta cho API phân tích SKU
+        # (ABC, sold_2016, dự báo 16 ngày ± dải tin cậy, validation proxy).
+        # Không bắt buộc - lỗi ở đây không làm hỏng database đã nạp xong.
+        try:
+            from build_sku_stats import build_sku_stats  # cùng thư mục src/
+            logger.info(">>> Building sku_stats cache (ABC / sold_2016 / validation)...")
+            build_sku_stats(conn)
+        except Exception as e:
+            logger.warning(f"    Bỏ qua build_sku_stats do lỗi: {e}")
+
         cursor = conn.execute("SELECT COUNT(*) FROM forecasts")
         count = cursor.fetchone()[0]
         logger.info("\n" + "=" * 55)

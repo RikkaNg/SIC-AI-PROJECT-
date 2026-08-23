@@ -45,6 +45,12 @@ services:
     depends_on:
       ml_service:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: always
     networks:
       - retail_network
@@ -62,7 +68,16 @@ services:
     environment:
       - BACKEND_URL=http://backend:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # Dùng 127.0.0.1 thay vì localhost: busybox wget ưu tiên ::1 trong khi
+      # nginx mặc định chỉ nghe IPv4 -> "connection refused" giả.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
     restart: always
     networks:
       - retail_network
