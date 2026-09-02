@@ -1,5 +1,6 @@
-# Sử dụng Python 3.9 slim
-FROM python:3.9-slim
+# Python 3.12 slim - khớp môi trường đã train models (sklearn 1.9 cần Python >= 3.11,
+# xem requirements.txt; python:3.9 cũ không cài được bộ thư viện của các pickle hiện có)
+FROM python:3.12-slim
 
 # Bắt buộc: Cài đặt libgomp1 (OpenMP cho LightGBM), build-essential và curl
 RUN apt-get update && apt-get install -y --no-install-recommends \

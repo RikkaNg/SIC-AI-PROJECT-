@@ -16,7 +16,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, Tuple
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -178,24 +178,34 @@ def ensure_store_access(identity: Identity, store_nbr: int) -> None:
         )
 
 
-def store_filter(identity: Identity, requested_store: Optional[int]):
+def identity_scope_sql(identity: Identity, requested_store: Optional[int],
+                       alias: str = "") -> Tuple[str, list]:
     """
-    Trả về (where_sql, params) cho cột store_nbr theo identity.
+    Hàm Row-Level Isolation DUY NHẤT cho mọi route đọc dữ liệu bán lẻ.
+    Trả về (where_sql, params) cho cột `[alias.]store_nbr` theo identity.
+
     - requested_store chỉ định -> phải thuộc phạm vi (else 403), filter theo nó.
     - Không chỉ định:
-        + admin -> không filter (toàn hệ thống)
-        + manager -> WHERE store_nbr IN (allowed); rỗng -> 403.
+        + admin/ERP (allowed_stores=None) -> không filter (toàn hệ thống)
+        + manager có scope rỗng -> 403 (không được gán cửa hàng nào)
+        + manager bình thường -> WHERE ... IN (?,...)
     """
+    col = f"{alias}.store_nbr" if alias else "store_nbr"
     if requested_store is not None:
         ensure_store_access(identity, requested_store)
-        return " WHERE store_nbr = ?", [int(requested_store)]
+        return f" WHERE {col} = ?", [int(requested_store)]
     if identity.allowed_stores is None:
         return "", []
     if not identity.allowed_stores:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Tài khoản chưa được gán cửa hàng nào. Liên hệ quản trị viên.")
     marks = ",".join("?" * len(identity.allowed_stores))
-    return f" WHERE store_nbr IN ({marks})", sorted(identity.allowed_stores)
+    return f" WHERE {col} IN ({marks})", sorted(identity.allowed_stores)
+
+
+def store_filter(identity: Identity, requested_store: Optional[int]):
+    """Wrapper tương thích ngược: scope trên cột `store_nbr` không tiền tố."""
+    return identity_scope_sql(identity, requested_store, alias="")
 
 
 # ====================== TOOL ACCESS VALIDATION (LLM Agent) ======================
@@ -227,7 +237,13 @@ def validate_tool_access(tool_name: str, tool_args: Dict, identity_allowed: Opti
     if identity_allowed is None:  # admin / ERP: toàn quyền
         return None
 
-    scope_text = ", ".join(map(str, sorted(identity_allowed))) if identity_allowed else "(không có)"
+    # Scope rỗng = chưa được gán cửa hàng nào: chặn mọi tool đọc dữ liệu,
+    # khớp hành vi 403 của identity_scope_sql ở các route thường.
+    if not identity_allowed:
+        return {"status": "forbidden",
+                "message": _FORBIDDEN_TEMPLATE.format(scope="(không có)")}
+
+    scope_text = ", ".join(map(str, sorted(identity_allowed)))
 
     # Tool có tham số store_nbr bắt buộc hoặc tùy chọn
     store_nbr = tool_args.get("store_nbr")
@@ -236,6 +252,14 @@ def validate_tool_access(tool_name: str, tool_args: Dict, identity_allowed: Opti
             return {"status": "forbidden",
                     "message": _FORBIDDEN_TEMPLATE.format(scope=scope_text)}
         return None
+
+    # Tool so sánh 2 cửa hàng trực tiếp (store_1/store_2, VD: compare_stores_revenue):
+    # cả hai đều phải nằm trong phạm vi - không được phụ thuộc cờ "store_nbr" duy nhất.
+    for _key in ("store_1", "store_2"):
+        _s = tool_args.get(_key)
+        if _s is not None and int(_s) not in identity_allowed:
+            return {"status": "forbidden",
+                    "message": _FORBIDDEN_TEMPLATE.format(scope=scope_text)}
 
     # So sánh cluster: mọi cửa hàng thuộc 2 cụm đều phải nằm trong phạm vi
     if tool_name == "compare_cluster_trends":

@@ -18,6 +18,7 @@ Endpoints:
 """
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
@@ -26,7 +27,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.src.security import Identity, ensure_store_access, get_current_user
+from backend.src.security import Identity, get_current_user, identity_scope_sql
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,24 +58,6 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
-def _scope_sql(alias: str, user: Identity, store_nbr: Optional[int]):
-    """
-    Xây mệnh đề phạm vi cửa hàng cho cột `{alias}.store_nbr`.
-    Trả về (where_sql, params) dạng ' WHERE {alias}.store_nbr = ?' hoặc
-    ' WHERE {alias}.store_nbr IN (?,...)' hoặc '' (admin xem toàn hệ thống).
-    """
-    if store_nbr is not None:
-        ensure_store_access(user, store_nbr)
-        return f" WHERE {alias}.store_nbr = ?", [int(store_nbr)]
-    if user.allowed_stores is None:
-        return "", []
-    if not user.allowed_stores:
-        raise HTTPException(status_code=403,
-                            detail="Tài khoản chưa được gán cửa hàng nào. Liên hệ quản trị viên.")
-    marks = ",".join("?" * len(user.allowed_stores))
-    return f" WHERE {alias}.store_nbr IN ({marks})", sorted(int(s) for s in user.allowed_stores)
-
-
 # ----------------------------------------------------------------------
 # Cache TTL nhỏ cho các query nặng (family-trend quét bảng forecasts)
 # ----------------------------------------------------------------------
@@ -91,6 +74,34 @@ def _ttl_get(key):
 
 def _ttl_put(key, value):
     _TTL_CACHE[key] = (time.monotonic(), value)
+
+
+# RMSLE toàn cục mặc định - CHỈ dùng khi bảng model_meta chưa có giá trị
+# (chưa chạy build_sku_stats.py). Giá trị thật luôn được đọc từ DB.
+_DEFAULT_GLOBAL_RMSLE = 0.357
+
+# Ngưỡng tồn kho thấp CHO MỖI CỬA HÀNG. Khi xem nhiều cửa hàng (scope gộp),
+# ngưỡng tổng = 30 × số cửa hàng trong phạm vi -> nhất quán với tô màu frontend.
+LOW_STOCK_PER_STORE = 30
+
+
+def _global_rmsle(conn: sqlite3.Connection) -> float:
+    """Đọc global_rmsle từ bảng model_meta (build_sku_stats.py dựng), có cache TTL."""
+    cached = _ttl_get(("global_rmsle",))
+    if cached is not None:
+        return float(cached)
+    value = _DEFAULT_GLOBAL_RMSLE
+    try:
+        if _table_exists(conn, "model_meta"):
+            row = conn.execute(
+                "SELECT value FROM model_meta WHERE key = 'global_rmsle'"
+            ).fetchone()
+            if row and row["value"]:
+                value = float(row["value"])
+    except (sqlite3.Error, TypeError, ValueError):
+        pass
+    _ttl_put(("global_rmsle",), value)
+    return value
 
 
 # ======================================================================
@@ -110,18 +121,19 @@ def list_products(
     user: Identity = Depends(get_current_user),
 ) -> dict:
     """Danh mục sản phẩm thật từ retail.db: tồn kho gộp theo phạm vi + tổng bán 2016."""
-    inv_scope_sql, inv_params = _scope_sql("inventory", user, store_nbr)
-    agg_scope_sql, agg_params = _scope_sql("agg", user, store_nbr)
+    inv_scope_sql, inv_params = identity_scope_sql(user, store_nbr, alias="inventory")
+    agg_scope_sql, agg_params = identity_scope_sql(user, store_nbr, alias="agg")
 
     # Bổ sung (sku_stats - ABC / dự báo 16 ngày / dải tin cậy): chỉ JOIN khi bảng đã dựng,
     # để API vẫn hoạt động trên database cũ chưa chạy build_sku_stats.py.
-    import math as _math
-    _GLOBAL_RMSLE = 0.357
     sku_stats_ready = False
+    global_rmsle = _DEFAULT_GLOBAL_RMSLE
     conn_pre = None
     try:
         conn_pre = _get_readonly_connection()
         sku_stats_ready = _table_exists(conn_pre, "sku_stats")
+        if sku_stats_ready:
+            global_rmsle = _global_rmsle(conn_pre)
     except HTTPException:
         raise
     finally:
@@ -132,6 +144,7 @@ def list_products(
     core_sql = f"""
         SELECT
             i.item_nbr                       AS item_nbr,
+            i.name                           AS name,
             i.family                         AS family,
             i.class                          AS class_code,
             i.perishable                     AS perishable,
@@ -144,7 +157,7 @@ def list_products(
             ss.abc_class                     AS abc_class,
             ROUND(COALESCE(ss.fc_total_16d, 0), 1) AS fc_total_16d,
             COALESCE(ss.family_rmsle, {_g})       AS family_rmsle
-        """.replace("{_g}", str(_GLOBAL_RMSLE))
+        """.replace("{_g}", repr(global_rmsle))
     core_sql += f"""
         FROM items i
         LEFT JOIN (
@@ -162,18 +175,20 @@ def list_products(
         core_sql += "\n        LEFT JOIN sku_stats ss ON ss.item_nbr = i.item_nbr\n"
     core_sql += "        WHERE 1=1\n"
     if search:
-        core_sql += " AND (CAST(i.item_nbr AS TEXT) LIKE ? OR UPPER(i.family) LIKE UPPER(?))"
+        core_sql += (" AND (CAST(i.item_nbr AS TEXT) LIKE ? OR UPPER(i.family) LIKE UPPER(?)"
+                     " OR UPPER(i.name) LIKE UPPER(?))")
         like = f"%{search.strip()}%"
-        core_params += [like, like]
+        core_params += [like, like, like]
     if family:
         core_sql += " AND i.family = ?"
         core_params.append(family.strip())
     if status:
-        core_sql += f" AND status = '{'outofstock' if status == 'outofstock' else 'active'}'"
+        core_sql += " AND status = ?"
+        core_params.append(status)
 
     sort_col = {
         "sold": "sold_2016", "stock": "stock",
-        "name": "family", "item": "item_nbr",
+        "name": "COALESCE(name, '#' || item_nbr)", "item": "item_nbr",
     }[sort]
     direction = "ASC" if order == "asc" else "DESC"
     outer_sql = f"""
@@ -198,18 +213,19 @@ def list_products(
         def _sku_extra(r: sqlite3.Row) -> dict:
             """Dải tin cậy dự báo 16 ngày: fc × exp(±rmsle_family) (1-sigma log-space)."""
             fc = float(r["fc_total_16d"] or 0.0)
-            sig = float(r["family_rmsle"]) if r["family_rmsle"] is not None else _GLOBAL_RMSLE
+            sig = float(r["family_rmsle"]) if r["family_rmsle"] is not None else global_rmsle
             return {
                 "abc_class": r["abc_class"],
                 "fc_total_16d": fc,
-                "fc_low": round(fc * _math.exp(-sig), 1),
-                "fc_high": round(fc * _math.exp(sig), 1),
+                "fc_low": round(fc * math.exp(-sig), 1),
+                "fc_high": round(fc * math.exp(sig), 1),
             }
 
         items = []
         for r in rows:
             item = {
                 "item_nbr": int(r["item_nbr"]),
+                "name": r["name"],
                 "family": r["family"],
                 "class_code": int(r["class_code"]) if r["class_code"] is not None else None,
                 "perishable": int(r["perishable"] or 0),
@@ -222,6 +238,15 @@ def list_products(
             else:
                 item.update({"abc_class": None, "fc_total_16d": None, "fc_low": None, "fc_high": None})
             items.append(item)
+        # Số cửa hàng trong phạm vi đang xem (1 nếu chọn store cụ thể) -> ngưỡng
+        # tồn kho thấp tổng = LOW_STOCK_PER_STORE × n_stores, khớp cách gộp stock.
+        stores_row = conn.execute(
+            f"SELECT COUNT(DISTINCT store_nbr) AS c FROM inventory{inv_scope_sql}",
+            inv_params,
+        ).fetchone()
+        n_stores = max(1, int(stores_row["c"] or 0))
+        low_stock_threshold = LOW_STOCK_PER_STORE * n_stores
+
         low_stock = conn.execute("""
             SELECT COUNT(*) AS c FROM (
                 SELECT COALESCE(SUM(v.stock), 0) AS stock
@@ -229,9 +254,9 @@ def list_products(
                 LEFT JOIN (SELECT item_nbr, SUM(current_stock) AS stock
                            FROM inventory{isql} GROUP BY item_nbr) v
                   ON v.item_nbr = i.item_nbr
-                GROUP BY i.item_nbr HAVING stock > 0 AND stock < 30
+                GROUP BY i.item_nbr HAVING stock > 0 AND stock < ?
             )
-        """.replace("{isql}", inv_scope_sql), inv_params).fetchone()
+        """.replace("{isql}", inv_scope_sql), [*inv_params, low_stock_threshold]).fetchone()
 
         return {
             "total": total,
@@ -239,6 +264,7 @@ def list_products(
             "page_size": page_size,
             "total_pages": max(1, -(-total // page_size)),
             "low_stock_count": int(low_stock["c"]) if low_stock else 0,
+            "low_stock_threshold": low_stock_threshold,
             "sales_cache_ready": cache_ready,
             "items": items,
         }
@@ -246,7 +272,8 @@ def list_products(
         raise
     except Exception as e:
         logger.exception("Error in list_products")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -263,7 +290,7 @@ def get_top_products(
     user: Identity = Depends(get_current_user),
 ) -> dict:
     """Top sản phẩm cụ thể (item_nbr) bán chạy nhất năm 2016 trong phạm vi user."""
-    scope_sql, params = _scope_sql("c", user, store_nbr)
+    scope_sql, params = identity_scope_sql(user, store_nbr, alias="c")
 
     conn = None
     try:
@@ -283,6 +310,7 @@ def get_top_products(
 
         rows = conn.execute(f"""
             SELECT c.item_nbr,
+                   i.name,
                    i.family,
                    i.class                    AS class_code,
                    i.perishable{ss_col},
@@ -290,7 +318,7 @@ def get_top_products(
             FROM agg_item_store_sales c
             JOIN items i ON i.item_nbr = c.item_nbr{ss_join}
             {scope_sql}
-            GROUP BY c.item_nbr, i.family, i.class, i.perishable{ss_group}
+            GROUP BY c.item_nbr, i.name, i.family, i.class, i.perishable{ss_group}
             ORDER BY unit_sales DESC
             LIMIT ?
         """, [*params, limit]).fetchall()
@@ -308,6 +336,7 @@ def get_top_products(
             product = {
                 "rank": idx,
                 "item_nbr": int(r["item_nbr"]),
+                "name": r["name"],
                 "family": r["family"],
                 "class_code": int(r["class_code"]) if r["class_code"] is not None else None,
                 "perishable": int(r["perishable"] or 0),
@@ -322,7 +351,8 @@ def get_top_products(
         raise
     except Exception as e:
         logger.exception("Error in get_top_products")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -339,7 +369,7 @@ def get_family_mix(
     user: Identity = Depends(get_current_user),
 ) -> dict:
     """Thị phần doanh số 2016 theo nhóm hàng (Top N + 'Khác') trong phạm vi user."""
-    scope_sql, params = _scope_sql("c", user, store_nbr)
+    scope_sql, params = identity_scope_sql(user, store_nbr, alias="c")
 
     conn = None
     try:
@@ -372,7 +402,8 @@ def get_family_mix(
         raise
     except Exception as e:
         logger.exception("Error in get_family_mix")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -394,7 +425,7 @@ def get_family_trend(
     Ưu tiên bảng tổng hợp agg_forecast_date_family (nhanh, tức thì);
     fallback quét trực tiếp forecasts nếu bảng chưa được dựng.
     """
-    scope_sql, params = _scope_sql("f", user, store_nbr)
+    scope_sql, params = identity_scope_sql(user, store_nbr, alias="f")
     cache_key = ("family_trend", tuple(params), scope_sql, days, top_families)
     cached = _ttl_get(cache_key)
     if cached is not None:
@@ -415,7 +446,7 @@ def get_family_trend(
         if has_agg:
             # Bản tổng hợp: scope theo cột store_nbr của bảng agg.
             # Lưu ý: sau "WHERE 1=1" phải dùng dạng "AND ..." chứ không phải "WHERE ..." thứ hai.
-            agg_scope_sql, agg_params = _scope_sql("a", user, store_nbr)
+            agg_scope_sql, agg_params = identity_scope_sql(user, store_nbr, alias="a")
             agg_scope_and_sql = agg_scope_sql.replace(" WHERE ", " AND ", 1)
             window_agg_sql = """
                 AND a.date >= (SELECT MIN(date) FROM agg_forecast_date_family)
@@ -512,7 +543,8 @@ def get_family_trend(
         raise
     except Exception as e:
         logger.exception("Error in get_family_trend")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -521,6 +553,86 @@ def get_family_trend(
 # ======================================================================
 # 5. DANH SÁCH NHÓM HÀNG (dropdown lọc)
 # ======================================================================
+
+# ======================================================================
+# CHỈ SỐ KINH DOANH LỊCH SỬ (/api/metrics/history)
+# ======================================================================
+@router.get("/metrics/history")
+def get_business_metrics(
+    date_from: Optional[str] = Query(default=None),
+    date_to: Optional[str] = Query(default=None),
+    store_nbr: Optional[int] = Query(default=None),
+    user: Identity = Depends(get_current_user),
+) -> dict:
+    """
+    Chuỗi chỉ số kinh doanh theo NGÀY (USD, giá THAM CHIẾU - dataset gốc không có giá):
+      revenue      = SUM(số_lượng × giá_bán_tham_chiếu theo nhóm hàng)
+      returns      = revenue × tỷ_lệ_trả_hàng(theo nhóm)
+      gross_profit = revenue - returns - cogs (giá vốn tính trên số bán ròng)
+    Nguồn: bảng tổng hợp agg_daily_business dựng một lần bởi
+            backend/scripts/build_business_cache.py.
+    Áp Row-Level Isolation như mọi endpoint khác.
+    """
+    scope_sql, params = identity_scope_sql(user, store_nbr, alias="b")
+    scope_and_sql = scope_sql.replace(" WHERE ", " AND ", 1)
+    cache_key = ("biz_history", tuple(params), scope_sql, date_from, date_to)
+    cached = _ttl_get(cache_key)
+    if cached is not None:
+        return cached
+
+    conn = None
+    try:
+        conn = _get_readonly_connection()
+        if not _table_exists(conn, "agg_daily_business"):
+            raise HTTPException(
+                status_code=503,
+                detail=("Chưa có bảng agg_daily_business trong DB. "
+                        "Chạy một lần: python backend/scripts/build_business_cache.py"))
+
+        rows = conn.execute(f"""
+            SELECT b.date AS date,
+                   ROUND(SUM(b.revenue), 2) AS revenue,
+                   ROUND(SUM(b.returns), 2) AS returns,
+                   ROUND(SUM(b.cogs), 2) AS cogs,
+                   COALESCE(SUM(t.n_invoices), 0) AS invoices
+            FROM agg_daily_business b
+            LEFT JOIN daily_transactions t
+                   ON t.date = b.date AND t.store_nbr = b.store_nbr
+            WHERE 1=1
+              {scope_and_sql}
+              {"AND b.date >= ?" if date_from else ""}
+              {"AND b.date <= ?" if date_to else ""}
+            GROUP BY b.date ORDER BY b.date
+        """, [*params, *([date_from] if date_from else []),
+              *([date_to] if date_to else [])]).fetchall()
+
+        items = []
+        for r in rows:
+            rev = float(r["revenue"] or 0)
+            ret = float(r["returns"] or 0)
+            cogs = float(r["cogs"] or 0)
+            items.append({
+                "date": r["date"],
+                "revenue": rev,
+                "returns": ret,
+                "gross_profit": round(rev - ret - cogs, 2),
+                "cogs": cogs,
+                "invoices": int(r["invoices"] or 0),
+            })
+        result = {"currency": "USD", "prices": "reference", "items": items}
+        _ttl_put(cache_key, result)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error in get_business_metrics")
+        raise HTTPException(
+            status_code=500,
+            detail="Lỗi hệ thống khi truy vấn chỉ số kinh doanh.")
+    finally:
+        if conn:
+            conn.close()
+
 
 @router.get("/product-families")
 def list_families(user: Identity = Depends(get_current_user)) -> List[str]:
@@ -536,7 +648,8 @@ def list_families(user: Identity = Depends(get_current_user)) -> List[str]:
         raise
     except Exception as e:
         logger.exception("Error in list_families")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -567,7 +680,7 @@ def get_model_validation(user: Identity = Depends(get_current_user)) -> dict:
             by_class = {}
         return {
             "ready": True,
-            "global_rmsle": float(meta.get("global_rmsle", 0.357)),
+            "global_rmsle": float(meta.get("global_rmsle", _DEFAULT_GLOBAL_RMSLE)),
             "built_at": meta.get("built_at"),
             "method": ("Độ lệch % giữa cửa sổ 45 ngày cuối so với 45 ngày liền trước "
                        "(w1 vs w0), tổng hợp theo từng SKU rồi nhóm theo lớp ABC"),
@@ -575,7 +688,8 @@ def get_model_validation(user: Identity = Depends(get_current_user)) -> dict:
         }
     except Exception as e:
         logger.exception("Error in get_model_validation")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()

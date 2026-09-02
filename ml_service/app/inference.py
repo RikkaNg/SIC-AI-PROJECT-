@@ -16,20 +16,31 @@ import numpy as np
 import pandas as pd
 
 # ====================== CẤU HÌNH ĐƯỜNG DẪN ======================
+# Dò project root theo anchor file (khớp cả layout local và container) - xem main.py
 CURRENT_FILE = Path(__file__).resolve()
 APP_DIR = CURRENT_FILE.parent
 ML_SERVICE_DIR = APP_DIR.parent
-PROJECT_ROOT = ML_SERVICE_DIR.parent
-ML_TRAINING_SRC = PROJECT_ROOT / "ml_training" / "src"
+PROJECT_ROOT = CURRENT_FILE.parents[2]
+for _parent in CURRENT_FILE.parents:
+    if (_parent / "ml_training" / "src" / "preprocessor.py").exists():
+        PROJECT_ROOT = _parent
+        break
+ML_TRAINING_DIR = PROJECT_ROOT / "ml_training"
+ML_TRAINING_SRC = ML_TRAINING_DIR / "src"
 
 
-for p in [str(ML_TRAINING_SRC), str(ML_SERVICE_DIR), str(PROJECT_ROOT)]:
+for p in [str(APP_DIR), str(ML_TRAINING_SRC), str(ML_TRAINING_DIR), str(ML_SERVICE_DIR), str(PROJECT_ROOT)]:
     if p not in sys.path:
         sys.path.append(p)
 
 from preprocessor import engineer_features
 
 logger = logging.getLogger(__name__)
+
+# Cửa sổ trượt cho vòng lặp đệ quy (§3.2): feature chỉ cần lag xa nhất 28 ngày +
+# rolling 7 (shift 1) => 36 ngày; giữ 60 ngày làm biên an toàn. Nhờ đó mỗi ngày
+# dự báo chỉ xử lý đuôi dữ liệu thay vì toàn bộ lịch sử (O(days × history) -> O(days × window)).
+RECURSION_WINDOW_DAYS = 60
 
 
 class RetailInferenceEngine:
@@ -44,6 +55,7 @@ class RetailInferenceEngine:
         cluster_engineer=None,
         w_lgbm: float = 0.5,
         w_cat: float = 0.5,
+        quality_filter: Optional[Any] = None,
     ):
         self.global_lgbm = global_lgbm
         self.global_prep = global_prep
@@ -52,10 +64,23 @@ class RetailInferenceEngine:
         self.cluster_engineer = cluster_engineer
         self.w_lgbm = w_lgbm
         self.w_cat = w_cat
+        # Callable family -> bool: chặn local model kém (RMSLE validation vượt ngưỡng)
+        self.quality_filter = quality_filter
 
         self.cat_feature_names = (
             getattr(self.global_cat, "feature_names_", []) if self.global_cat else []
         )
+
+        # Union các cột input mà preprocessor cần (global + từng local) - dùng để
+        # bổ sung cột thiếu (fill NaN -> imputer điền 0) thay vì lỗi transform.
+        required_cols: set = set()
+        for prep in [self.global_prep] + [
+            art.get("preprocessor") for art in self.local_models.values()
+        ]:
+            names = getattr(prep, "feature_names_in_", None)
+            if names is not None:
+                required_cols.update(str(c) for c in names)
+        self._required_feature_cols = required_cols
 
     def predict_recursive(
         self, 
@@ -117,7 +142,13 @@ class RetailInferenceEngine:
         # 2. Vòng lặp đệ quy qua từng ngày
         for current_date in sorted(future_dates):
             current_date_ts = pd.to_datetime(current_date)
-            temp_combined = combined[combined["date"] <= current_date_ts].copy()
+            # Cửa sổ trượt: chỉ cần 36 ngày gần nhất cho lag/rolling - tránh tính
+            # lại feature trên toàn bộ lịch sử mỗi ngày (§3.2)
+            window_start = current_date_ts - pd.Timedelta(days=RECURSION_WINDOW_DAYS)
+            temp_combined = combined[
+                (combined["date"] <= current_date_ts)
+                & (combined["date"] > window_start)
+            ].copy()
 
             # Tạo feature kỹ thuật (lag, rolling, calendar)
             featured = engineer_features(
@@ -131,12 +162,21 @@ class RetailInferenceEngine:
                 logger.warning(f"No features generated for date: {current_date_ts.date()}")
                 continue
 
+            # Bảo đảm đủ cột input cho preprocessor: điền NaN SAU khi feature
+            # engineering (tránh đụng độ tên cột khi cluster transform merge),
+            # imputer sẽ xử lý như pipeline offline.
+            for col in self._required_feature_cols:
+                if col not in day_featured.columns:
+                    day_featured[col] = np.nan
+
             current_family = day_featured["family"].iloc[0]
             used_model = "None"
 
             # --- SMART ROUTING INFERENCE ---
-            # Tuyến 1: Local Model chuyên biệt
-            if current_family in self.local_models:
+            # Tuyến 1: Local Model chuyên biệt (nếu đạt ngưỡng chất lượng)
+            if current_family in self.local_models and (
+                self.quality_filter is None or self.quality_filter(current_family)
+            ):
                 local_prep = self.local_models[current_family]["preprocessor"]
                 local_model = self.local_models[current_family]["model"]
 

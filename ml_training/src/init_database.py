@@ -66,7 +66,8 @@ def init_schema(conn: sqlite3.Connection):
             item_nbr INTEGER PRIMARY KEY,
             family TEXT,
             class INTEGER,
-            perishable INTEGER
+            perishable INTEGER,
+            name TEXT
         );
 
         CREATE TABLE IF NOT EXISTS forecasts (
@@ -120,13 +121,21 @@ def ingest_stores_items(conn: sqlite3.Connection):
     )
 
     items_df = pd.read_csv(RAW_DIR / "items.csv")
+    # Tên sản phẩm sinh bởi generate_product_names.py (tùy chọn - thiếu thì name NULL)
+    names_path = RAW_DIR / "product_names.csv"
+    if names_path.exists():
+        names_df = pd.read_csv(names_path, dtype={"item_nbr": "int64", "name": "str"})
+        items_df = items_df.merge(names_df, on="item_nbr", how="left")
+    else:
+        items_df["name"] = None
     conn.executemany(
-        "INSERT INTO items (item_nbr, family, class, perishable) VALUES (?, ?, ?, ?)",
-        items_df[["item_nbr", "family", "class", "perishable"]].itertuples(index=False, name=None)
+        "INSERT INTO items (item_nbr, family, class, perishable, name) VALUES (?, ?, ?, ?, ?)",
+        items_df[["item_nbr", "family", "class", "perishable", "name"]].itertuples(index=False, name=None)
     )
     conn.commit()
 
-    logger.info(f"    Loaded {len(stores_df):,} stores and {len(items_df):,} items.")
+    logger.info(f"    Loaded {len(stores_df):,} stores and {len(items_df):,} items "
+                f"(named: {int(items_df['name'].notna().sum()):,}).")
 
 
 def resolve_submission_file() -> Path:

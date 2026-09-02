@@ -35,13 +35,23 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/src:/app/backend/src
+      # CSV tham chiếu cho Scenario Lab: oil.csv, holidays_events.csv, test.csv
+      # (onpromotion baseline của kỳ dự báo). Đọc read-only.
+      - ./ml_training/data/raw:/app/ml_training/data/raw:ro
     environment:
       - ML_SERVICE_URL=http://ml_service:8001
       - DB_PATH=/app/backend/src/database/retail.db
-      # Cấu hình Groq Cloud LLM API (Qwen 3.6 - qwen3-32b đã bị Groq ngừng phục vụ)
+      # Secret ky JWT - sinh tu dong boi backend/scripts/gen_jwt_secret.py (doc .env o goc du an)
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      # Endpoint LLM tùy chọn (OpenAI-compatible, VD: OrcaRouter) - để trống = Groq Cloud
+      - GROQ_BASE_URL=${GROQ_BASE_URL:-}
       - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen/qwen3.6-27b}
       - LLM_REASONING_EFFORT=${LLM_REASONING_EFFORT:-}
+      # Ngân sách ngữ cảnh hội thoại (chat history) - backend tự trim theo token
+      - LLM_HISTORY_TOKEN_BUDGET=${LLM_HISTORY_TOKEN_BUDGET:-1200}
+      - LLM_HISTORY_MAX_MESSAGES=${LLM_HISTORY_MAX_MESSAGES:-40}
+      - LLM_HISTORY_MAX_CHARS_PER_MSG=${LLM_HISTORY_MAX_CHARS_PER_MSG:-4000}
     depends_on:
       ml_service:
         condition: service_healthy
@@ -79,6 +89,28 @@ services:
       retries: 3
       start_period: 5s
     restart: always
+    networks:
+      - retail_network
+
+  # ==========================================
+  # 4. ML RETRAIN JOB (one-shot, §3.4 - chỉ chạy khi gọi rõ ràng)
+  #    docker compose --profile retrain run --rm ml-retrain
+  #    Train lại 33 local models -> dự báo -> nạp lại bảng forecasts vào retail.db.
+  #    Lên lịch định kỳ bằng cron host gọi lệnh trên.
+  # ==========================================
+  ml-retrain:
+    build:
+      context: .
+      dockerfile: ./ml_service/Dockerfile
+    container_name: retail_ml_retrain
+    profiles: ["retrain"]
+    command: python ml_training/src/retrain_pipeline.py
+    volumes:
+      # models mount READ-WRITE (khác ml_service) vì job ghi đè local_lgbm_models.pkl
+      - ./ml_service/models:/app/ml_service/models
+      - ./ml_training/src:/app/ml_training/src:ro
+      - ./ml_training/data:/app/ml_training/data
+      - ./backend/src/database:/app/backend/src/database
     networks:
       - retail_network
 

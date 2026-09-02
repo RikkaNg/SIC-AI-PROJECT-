@@ -92,3 +92,44 @@ python backend/scripts/build_sales_cache.py   # dựng agg_item_store_sales + ag
 - Lỗi LLM giờ trả về HTTP 502 kèm `detail` tiếng Việt rõ ràng thay vì 500 trống không thông tin.
 - Sau khi đổi `.env`, cần **restart/recreate container backend** (`docker compose up -d --force-recreate backend`)
   hoặc khởi động lại uvicorn để nhận model mới và các route sản phẩm mới.
+
+### Scenario Lab — kịch bản What-if (mới)
+
+Chỉnh số liệu → dự báo lại bằng mô hình thật → phân tích tự động → xem kết quả, ở **2 kênh**:
+
+- **Web**: view "Kịch bản What-if" trong dashboard — chọn cửa hàng + ngành hàng, chỉnh 6 nhóm số liệu
+  (hệ số nhu cầu 0.5–2×, khuyến mãi, giá dầu, lưu lượng khách, sự kiện bất ngờ ngày lễ/thiên tai,
+  tồn kho + lead time), bấm "Chạy kịch bản" → biểu đồ so sánh trước/sau + KPI + kết luận + đề xuất nhập + Top SKU biến động.
+- **Chatbot**: hỏi "giả lập tăng 30% nhu cầu ngành BEVERAGES tại cửa hàng 1" — LLM gọi tool
+  `run_scenario_analysis` (backend tự chạy toàn bộ phân tích, LLM chỉ trình bày lại).
+
+API: `POST /api/scenario/run` (RLS theo cửa hàng) + `GET /api/scenario/meta` (giá trị prefill).
+
+Lưu ý vận hành:
+
+- Lần chạy đầu mỗi tiến trình backend cần đọc `test.csv` (126 MB) để nạp lịch khuyến mãi baseline →
+  ~1-2 phút, sau đó tự cache ra `backend/src/database/scenario_future_promo.csv` (xóa file này để build lại).
+- 1 lần chạy kịch bản mất ~30-45s do dự báo đệ quy 16 ngày bên ml_service.
+- Lịch/khuyến mãi baseline lấy từ `ml_training/data/raw` (oil.csv, holidays_events.csv, test.csv);
+  docker đã mount read-only vào backend.
+
+### Chạy test (backend/tests)
+
+```bash
+# Từ thư mục gốc project (cần backend :8000 + ml_service :8001 đang chạy)
+python -m pytest                        # toàn bộ 113 test
+python -m pytest -m "not llm and not slow"   # bỏ qua các test gọi Groq API thật
+python -m pytest backend/tests/test_api.py -v
+```
+
+Lưu ý quan trọng:
+
+- Test dùng `http://127.0.0.1:8000/8001` (không phải `localhost`): trên máy dev,
+  `wslrelay.exe` chiếm `[::1]:8000/8001` (service cũ trong WSL không có model, trả
+  `degraded`) nên resolve `localhost` sang IPv6 sẽ trúng nhầm service đó.
+- Các test chat (`llm`, `slow` + chat trong test_api/test_security/test_edge_cases) gọi
+  **Groq API thật**. Free tier chỉ có 8.000 TPM / 200.000 TPD, mỗi lời gọi chat tốn
+  ~5.000 token → chạy cả suite một mạch sẽ bị 429 → backend trả 502 → test fail.
+  Hãy chạy test LLM tách lẻ (cách nhau ~45-60s) hoặc nâng tier Groq.
+- Cần Python có: fastapi, uvicorn, groq, pyjwt, httpx, pandas (backend) và
+  lightgbm, catboost, scikit-learn (ml_service), cùng pytest cho test.

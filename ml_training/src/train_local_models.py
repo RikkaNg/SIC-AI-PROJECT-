@@ -126,6 +126,11 @@ def train_one_family(family: str, df_family: pd.DataFrame):
         "preprocessor": preprocessor,
         "best_iteration": int(best_iter),
         "trained_until": str(df_family["date"].max().date()),
+        # Metadata chất lượng (§3.3): cho phép ml_service định tuyến theo chất
+        # lượng - family có RMSLE validation kém sẽ rơi về Global Ensemble.
+        "val_rmsle": round(rmsle, 5),
+        "n_train_days": int(df_family["date"].nunique()),
+        "trained_at": datetime.now().isoformat(timespec="seconds"),
     }
     metrics = {
         "family": family,

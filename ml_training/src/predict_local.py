@@ -46,6 +46,10 @@ LOCAL_MODELS_PATH = MODELS_DIR / "local_lgbm_models.pkl"
 OUTPUT_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_SUBMISSION_PATH = OUTPUT_DIR / "submission_local.csv"
 
+# Cửa sổ trượt cho vòng lặp đệ quy (§3.2): feature chỉ cần lag 28 + rolling 7/shift 1
+# => 36 ngày; giữ 60 ngày làm biên an toàn thay vì quét toàn bộ lịch sử mỗi ngày.
+RECURSION_WINDOW_DAYS = 60
+
 from data_loader import (
     RAW_DIR,
     load_data,
@@ -175,8 +179,13 @@ def recursive_forecast_mixed(
     w_cat: float,
     local_models: dict,
     cluster_engineer=None,
+    quality_filter=None,
 ) -> pd.DataFrame:
-    """Thực hiện dự báo đệ quy từng ngày với cơ chế Smart Routing."""
+    """Thực hiện dự báo đệ quy từng ngày với cơ chế Smart Routing.
+
+    quality_filter: callable(family) -> bool. Family có local model nhưng filter
+    trả False sẽ rơi về Global Ensemble - khớp với định tuyến live của ml_service.
+    """
     logger.info(">>> Starting recursive forecast (Smart Routing)...")
     combined = combined_history.copy()
     predictions = []
@@ -184,7 +193,12 @@ def recursive_forecast_mixed(
 
     for current_date in sorted(test_dates):
         current_date_ts = pd.to_datetime(current_date)
-        temp_combined = combined[combined["date"] <= current_date_ts].copy()
+        # Cửa sổ trượt: chỉ giữ 60 ngày gần nhất cho lag/rolling thay vì toàn bộ lịch sử (§3.2)
+        window_start = current_date_ts - pd.Timedelta(days=RECURSION_WINDOW_DAYS)
+        temp_combined = combined[
+            (combined["date"] <= current_date_ts)
+            & (combined["date"] > window_start)
+        ].copy()
 
         # Tiền xử lý feature (truyền an toàn cluster_engineer)
         featured = engineer_features(
@@ -203,7 +217,7 @@ def recursive_forecast_mixed(
         for family, group_df in day_featured.groupby("family"):
             group_idx = group_df.index
 
-            if family in local_models:
+            if family in local_models and (quality_filter is None or quality_filter(family)):
                 # Tuyến 1: Local Model
                 local_prep = local_models[family]["preprocessor"]
                 local_model = local_models[family]["model"]
@@ -278,18 +292,43 @@ def build_submission_local():
     global_cat = None
     w_lgbm, w_cat = 1.0, 0.0
 
+    ensemble_meta = {}
+    if ENSEMBLE_META_PATH.exists():
+        try:
+            with open(ENSEMBLE_META_PATH) as f:
+                ensemble_meta = json.load(f)
+            w_lgbm = float(ensemble_meta.get("lgbm_weight", 0.5))
+            w_cat = float(ensemble_meta.get("catboost_weight", 0.5))
+        except Exception as e:
+            logger.warning(f">>> Could not read {ENSEMBLE_META_PATH.name}: {e}")
+
     if CATBOOST_MODEL_PATH.exists():
         try:
             from catboost import CatBoostRegressor
             global_cat = CatBoostRegressor()
             global_cat.load_model(str(CATBOOST_MODEL_PATH))
-            if ENSEMBLE_META_PATH.exists():
-                with open(ENSEMBLE_META_PATH) as f:
-                    meta = json.load(f)
-                w_lgbm = meta.get("lgbm_weight", 0.5)
-                w_cat = meta.get("catboost_weight", 0.5)
         except Exception as e:
             logger.warning(f">>> Could not load CatBoost model: {e}")
+
+    # Định tuyến theo chất lượng (§3.3): local model có RMSLE validation vượt
+    # ngưỡng (1.3 × RMSLE ensemble tham chiếu) sẽ rơi về Global Ensemble -
+    # đồng bộ với smart routing của ml_service.
+    local_metrics: dict = {}
+    metrics_csv = MODELS_DIR / "local_models_metrics.csv"
+    if metrics_csv.exists():
+        try:
+            df_m = pd.read_csv(metrics_csv)
+            local_metrics = dict(zip(df_m["family"], df_m["rmsle"].astype(float)))
+        except Exception as e:
+            logger.warning(f">>> Could not read {metrics_csv.name}: {e}")
+
+    ref_rmsle = float(ensemble_meta.get("avg_blend_rmsle", 0.357))
+
+    def _quality_filter(family: str) -> bool:
+        rmsle = local_metrics.get(family)
+        if rmsle is None:
+            return True
+        return rmsle <= 1.3 * ref_rmsle
 
     logger.info(">>> 2. Loading Train History & Test Skeleton...")
     train_family = load_data()
@@ -314,6 +353,7 @@ def build_submission_local():
         w_cat=w_cat,
         local_models=local_models,
         cluster_engineer=cluster_engineer,
+        quality_filter=_quality_filter,
     )
 
     if family_preds.empty:

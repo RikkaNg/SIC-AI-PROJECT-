@@ -13,7 +13,7 @@ import {
   Bell, Menu, LogOut,
   MapPin, RefreshCw,
   ArrowUpRight, ArrowDownRight, Building2, PackagePlus,
-  Zap,
+  Zap, FlaskConical,
 } from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────── */
@@ -30,17 +30,13 @@ interface AuthInfo {
 interface TopProduct {
   rank: number;
   item_nbr: number;
+  name?: string | null;
   family: string;
   class_code: number | null;
   perishable: number;
   unit_sales: number;
   share_pct: number;
   abc_class?: string | null;
-}
-
-interface PieDatum {
-  name: string;
-  value: number;
 }
 
 /** Một dòng trong /sale_dataset_ver_2.csv (dataset lịch sử tĩnh) */
@@ -54,6 +50,7 @@ interface RawSaleData {
 /** Dòng danh mục sản phẩm thật từ /api/products */
 interface ProductItem {
   item_nbr: number;
+  name?: string | null;
   family: string;
   class_code: number | null;
   perishable: number;
@@ -74,6 +71,8 @@ interface ProductsResponse {
   page_size: number;
   total_pages: number;
   low_stock_count: number;
+  /** Ngưỡng tồn kho thấp tổng theo phạm vi (30 × số cửa hàng) - do backend tính */
+  low_stock_threshold?: number;
   sales_cache_ready: boolean;
   items: ProductItem[];
 }
@@ -148,6 +147,53 @@ function fmt(n: number) {
   return n.toLocaleString("vi-VN");
 }
 
+/* ── Giá tham chiếu theo nhóm hàng (ƯỚC TÍNH — dataset gốc KHÔNG có giá) ──
+   Mỗi nhóm: [giá bán $/đơn vị, tỷ lệ giá vốn trên giá bán, tỷ lệ khách trả hàng]
+   Công thức: Trả hàng = DT × tỷ lệ trả | LN gộp = DT − Trả hàng − Giá vốn */
+const DEFAULT_ECON: [number, number, number] = [1.8, 0.78, 0.02];
+const FAMILY_ECONOMICS: Record<string, [number, number, number]> = {
+  "GROCERY I": [1.4, 0.8, 0.015], "GROCERY II": [1.6, 0.78, 0.02],
+  "BEVERAGES": [1.2, 0.74, 0.01], "CLEANING": [2.3, 0.72, 0.015],
+  "PRODUCE": [1.0, 0.82, 0.04], "DAIRY": [1.5, 0.8, 0.03],
+  "BREAD/BAKERY": [0.9, 0.7, 0.03], "POULTRY": [3.4, 0.84, 0.02],
+  "MEATS": [4.2, 0.84, 0.02], "DELI": [3.6, 0.8, 0.02],
+  "EGGS": [2.0, 0.82, 0.03], "FROZEN FOODS": [2.6, 0.76, 0.02],
+  "PREPARED FOODS": [2.3, 0.72, 0.03], "SEAFOOD": [5.0, 0.85, 0.04],
+  "LIQUOR,WINE,BEER": [4.5, 0.72, 0.005], "PERSONAL CARE": [2.6, 0.68, 0.02],
+  "HOME CARE": [3.1, 0.7, 0.015], "BEAUTY": [3.4, 0.65, 0.03],
+  "HOME AND KITCHEN I": [6.5, 0.68, 0.03], "HOME AND KITCHEN II": [5.5, 0.68, 0.03],
+  "HOME APPLIANCES": [28, 0.8, 0.04], "PLAYERS AND ELECTRONICS": [35, 0.84, 0.05],
+  "HARDWARE": [4.8, 0.72, 0.02], "PET SUPPLIES": [3.2, 0.72, 0.02],
+  "SCHOOL AND OFFICE SUPPLIES": [2.4, 0.66, 0.02], "BABY CARE": [3.3, 0.72, 0.03],
+  "CELEBRATION": [2.8, 0.62, 0.04], "LADIESWEAR": [7.5, 0.6, 0.06],
+  "LINGERIE": [5.5, 0.58, 0.06], "LAWN AND GARDEN": [6, 0.66, 0.03],
+  "BOOKS": [4.2, 0.62, 0.02], "MAGAZINES": [1.8, 0.55, 0.02],
+  "AUTOMOTIVE": [9.5, 0.74, 0.02], "ABRASIVES": [2.1, 0.68, 0.02],
+};
+function econOf(fam: string): [number, number, number] {
+  const key = (fam || "").toUpperCase().trim();
+  return FAMILY_ECONOMICS[key] ?? DEFAULT_ECON;
+}
+/* Tỷ giá quy đổi HIỂN THỊ: dữ liệu gốc trong DB tính bằng USD,
+   giao diện hiển thị VND. Đổi tỷ giá chỉ cần sửa con số này. */
+const USD_TO_VND = 25500;
+function fmtMoney(n: number): string {
+  const vnd = Math.round(n * USD_TO_VND);
+  return vnd.toLocaleString("vi-VN") + " ₫";
+}
+function fmtMoneyCompact(v: number): string {
+  const x = v * USD_TO_VND;
+  if (Math.abs(x) >= 1e12) return `${(x / 1e12).toLocaleString("vi-VN", { maximumFractionDigits: 2 })} nghìn tỷ ₫`;
+  if (Math.abs(x) >= 1e9) return `${(x / 1e9).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} tỷ ₫`;
+  if (Math.abs(x) >= 1e6) return `${Math.round(x / 1e6).toLocaleString("vi-VN")} tr ₫`;
+  return `${Math.round(x).toLocaleString("vi-VN")} ₫`;
+}
+
+/* Cache module-level: tránh tải lại CSV / gọi lại API mỗi lần chuyển tab */
+let csvHistCache: RawSaleData[] | null = null;
+type BizPoint = { date: string; revenue: number; returns: number; gross_profit: number; cogs?: number; invoices?: number };
+const bizCacheByBranch: Record<string, BizPoint[]> = {};
+
 /* ── Small components (kiểu frontend2) ───────────────────────── */
 function StatCard({
   label, value, sub, trend, color = "blue",
@@ -194,6 +240,21 @@ function ChartTip({ active, payload, label }: any) {
       {payload.map((p: any, i: number) => (
         <p key={i} style={{ color: p.color }} className="text-xs font-mono">
           {p.name}: <span className="font-medium">{typeof p.value === "number" ? p.value.toLocaleString("vi-VN") : p.value}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/* Tooltip cho các biểu đồ tiền tệ (dữ liệu gốc USD, hiển thị VND) */
+function BizTip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-2xl">
+      <p className="text-[10px] font-mono text-slate-500 mb-1.5">{label}</p>
+      {payload.map((p: any, i: number) => (
+        <p key={i} style={{ color: p.color }} className="text-xs font-mono">
+          {p.name}: <span className="font-medium">{fmtMoney(Number(p.value))}</span>
         </p>
       ))}
     </div>
@@ -579,7 +640,8 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
                   <div className="flex items-center justify-between mb-1 gap-2">
                     <span className="text-slate-700 text-xs truncate flex items-center gap-1.5 min-w-0">
                       <span className={`font-mono text-[9px] w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${i === 0 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{p.rank}</span>
-                      <span className="font-mono font-medium">#{p.item_nbr}</span>
+                      <span className="font-medium truncate" title={p.name ?? undefined}>{p.name ?? `#${p.item_nbr}`}</span>
+                      <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">#{p.item_nbr}</span>
                       <span className="text-[10px] font-mono text-slate-400 truncate">{p.family}</span>
                       {p.abc_class && (
                         <span className={`text-[9px] font-mono px-1 rounded border flex-shrink-0 ${abcBadgeClass(p.abc_class)}`} title={`Lớp ${p.abc_class} theo tỷ trọng doanh số cộng dồn`}>
@@ -629,11 +691,12 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
 
     try {
       // Gọi Backend Gateway (/api/chat) -> LLM Agent Groq Qwen 3.6 + Function Calling
-      // Gửi kèm tối đa 16 lượt gần nhất để AI nhớ ngữ cảnh mà không quá tải token
+      // Gửi kèm tối đa 40 tin gần nhất; backend tự trim theo ngân sách token nên
+      // không cần cắt cứng ở đây (tránh mất ngữ cảnh gần khi câu trả lời dài).
       const response = await apiFetch(apiBase, "/api/chat", auth, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_query: text, chat_history: historyRef.current.slice(-16) })
+        body: JSON.stringify({ user_query: text, chat_history: historyRef.current.slice(-40) })
       });
 
       if (response.status === 401) { onAuthError(); return; }
@@ -813,9 +876,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   const [families, setFamilies] = useState<string[]>([]);
   const [horizon, setHorizon] = useState<{ from: string; to: string } | null>(null);
   const [trendDays, setTrendDays] = useState(16);
-  const [pieData, setPieData] = useState<PieDatum[]>([]);
   const [totalForecast, setTotalForecast] = useState<number | null>(null);
-  const [skuCount, setSkuCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -826,29 +887,21 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
       setErr("");
       try {
         const storeParam = branchId !== "all" ? `&store_nbr=${branchId}` : "";
-        const [trendRes, mixRes, prodRes] = await Promise.all([
-          apiFetch(apiBase, `/api/family-trend?days=${trendDays}&top_families=6${storeParam}`, auth),
-          apiFetch(apiBase, `/api/family-mix?top=4${storeParam}`, auth),
-          apiFetch(apiBase, `/api/products?page=1&page_size=1${storeParam}`, auth),
-        ]);
-        if (trendRes.status === 401 || mixRes.status === 401 || prodRes.status === 401) { onAuthError(); return; }
+        const trendRes = await apiFetch(apiBase, `/api/family-trend?days=${trendDays}&top_families=6${storeParam}`, auth);
+        if (trendRes.status === 401) { onAuthError(); return; }
         if (!trendRes.ok) {
           const d = await trendRes.json().catch(() => null);
           throw new Error(typeof d?.detail === "string" ? d.detail : "Không tải được xu hướng dự báo.");
         }
         const trend = await trendRes.json();
-        const mix = mixRes.ok ? await mixRes.json() : { items: [] };
-        const prod = prodRes.ok ? await prodRes.json() : null;
         if (cancelled) return;
 
         setTrendRows(trend.series || []);
         setFamilies(trend.families || []);
         setHorizon({ from: trend.date_from, to: trend.date_to });
-        setPieData(mix.items || []);
         setTotalForecast((trend.series || []).reduce((s: number, r: any) => {
           return s + (trend.families || []).reduce((s2: number, f: string) => s2 + (Number(r[f]) || 0), 0);
         }, 0));
-        setSkuCount(prod?.total ?? null);
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || "Không kết nối được backend.");
       } finally {
@@ -865,18 +918,47 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   // ── Dữ liệu bán hàng LỊCH SỬ (dataset tổng toàn chuỗi trong public/) ──
   const [histRows, setHistRows] = useState<RawSaleData[]>([]);
   useEffect(() => {
+    if (csvHistCache) { setHistRows(csvHistCache); return; }
     let cancelled = false;
     Papa.parse<RawSaleData>("/sale_dataset_ver_2.csv", {
       header: true,
       download: true,
       dynamicTyping: true,
       complete: (result) => {
-        if (!cancelled) setHistRows(result.data.filter((d) => d.date && d.family && d.unit_sales != null));
+        const rows = result.data.filter((d) => d.date && d.family && d.unit_sales != null);
+        csvHistCache = rows;
+        if (!cancelled) setHistRows(rows);
       },
       error: () => { /* CSV thiếu -> các mục lịch sử hiện trạng thái trống */ },
     });
     return () => { cancelled = true; };
   }, []);
+
+  // ── Chỉ số kinh doanh lịch sử từ backend (RLS theo cửa hàng; gốc USD, hiển thị VND) ──
+  const [bizRows, setBizRows] = useState<BizPoint[]>([]);
+  const [bizState, setBizState] = useState<"loading" | "ok" | "none">("loading");
+  useEffect(() => {
+    const cached = bizCacheByBranch[branchId];
+    if (cached) { setBizRows(cached); setBizState("ok"); return; }
+    setBizRows([]);
+    setBizState("loading");
+    let cancelled = false;
+    apiFetch(apiBase, `/api/metrics/history${branchId !== "all" ? `?store_nbr=${branchId}` : ""}`, auth)
+      .then(async (r) => {
+        if (cancelled) return;
+        if (r.status === 401) { onAuthError(); return; }
+        if (!r.ok) { setBizState("none"); return; }
+        const d = await r.json();
+        const items: BizPoint[] = d.items || [];
+        bizCacheByBranch[branchId] = items;
+        if (!cancelled) {
+          setBizRows(items);
+          setBizState(items.length ? "ok" : "none");
+        }
+      })
+      .catch(() => { if (!cancelled) setBizState("none"); });
+    return () => { cancelled = true; };
+  }, [branchId, apiBase, auth, onAuthError]);
 
   // ── Bộ lọc thời gian phần lịch sử ──
   const [granularity, setGranularity] = useState<HistGranularity>("month");
@@ -884,14 +966,21 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   const [toDate, setToDate] = useState("");
   const [specificDate, setSpecificDate] = useState("");
 
+  // Khung thời gian: ưu tiên CSV; nếu CSV thiếu thì dùng chính dữ liệu backend
   const bounds = useMemo(() => {
     let min = ""; let max = "";
     for (const r of histRows) {
       if (!min || r.date < min) min = r.date;
       if (!max || r.date > max) max = r.date;
     }
+    if (!min) {
+      for (const p of bizRows) {
+        if (!min || p.date < min) min = p.date;
+        if (!max || p.date > max) max = p.date;
+      }
+    }
     return { min, max };
-  }, [histRows]);
+  }, [histRows, bizRows]);
 
   const range = useMemo(() => {
     let from = fromDate || bounds.min;
@@ -899,6 +988,23 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     if (from && to && from > to) [from, to] = [to, from];
     return { from, to };
   }, [fromDate, toDate, bounds]);
+
+  // Chọn "Ngày cụ thể" -> toàn bộ biểu đồ/KPI co lại đúng NGÀY đó
+  // (ghi đè khoảng từ-đến và thang hiển thị cho đến khi bấm Xóa)
+  const effRange = useMemo(
+    () => (specificDate ? { from: specificDate, to: specificDate } : range),
+    [specificDate, range.from, range.to]
+  );
+  // Độ dài kỳ hiệu lực (số ngày)
+  const customSpanDays = useMemo(() => {
+    if (specificDate) return 1;
+    if (!effRange.from || !effRange.to) return Number.POSITIVE_INFINITY;
+    const d = Math.round((Date.parse(effRange.to) - Date.parse(effRange.from)) / 86400000) + 1;
+    return Number.isFinite(d) && d > 0 ? d : Number.POSITIVE_INFINITY;
+  }, [specificDate, effRange.from, effRange.to]);
+  // Kỳ ngắn (<=61 ngày) tự dùng thang NGÀY để không bị gộp thành cột tháng/quý gây hiểu nhầm
+  const effGranularity: HistGranularity =
+    specificDate || customSpanDays <= 61 ? "day" : granularity;
 
   const dailyTotals = useMemo(() => {
     const m: Record<string, number> = {};
@@ -910,8 +1016,8 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   const agg = useMemo(() => {
     const map = new Map<string, { total: number; perishable: number; durable: number; fams: Record<string, number> }>();
     for (const r of histRows) {
-      if (r.date < range.from || r.date > range.to) continue;
-      const key = histPeriodKey(r.date, granularity);
+      if (r.date < effRange.from || r.date > effRange.to) continue;
+      const key = histPeriodKey(r.date, effGranularity);
       let bucket = map.get(key);
       if (!bucket) { bucket = { total: 0, perishable: 0, durable: 0, fams: {} }; map.set(key, bucket); }
       const v = Number(r.unit_sales) || 0;
@@ -921,7 +1027,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     }
     const series = Array.from(map.entries())
       .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([period, b]) => ({ period, label: histPeriodLabel(period, granularity), ...b, growth: null as number | null }));
+      .map(([period, b]) => ({ period, label: histPeriodLabel(period, effGranularity), ...b, growth: null as number | null }));
     for (let i = 1; i < series.length; i++) {
       const prev = series[i - 1].total;
       series[i].growth = prev > 0 ? ((series[i].total - prev) / prev) * 100 : null;
@@ -930,19 +1036,72 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     for (const s of series) for (const [fam, v] of Object.entries(s.fams)) famTotals[fam] = (famTotals[fam] || 0) + v;
     const topFamilies = Object.entries(famTotals).sort(([, a], [, b]) => b - a);
     return { series, topFamilies };
-  }, [histRows, range.from, range.to, granularity]);
+  }, [histRows, effRange.from, effRange.to, effGranularity]);
 
-  const trendChartData = useMemo(() => agg.series.map((s) => ({
-    label: s.label,
-    total: Math.round(s.total),
-    perishable: Math.round(s.perishable),
-    durable: Math.round(s.durable),
-    growth: s.growth === null ? null : parseFloat(s.growth.toFixed(1)),
-  })), [agg]);
+  // Chỉ số kinh doanh: ưu tiên backend /api/metrics/history (RLS, nhanh);
+  // fallback quy đổi từ CSV theo giá tham chiếu nếu route chưa khả dụng.
+  const trendChartData = useMemo(() => {
+    if (bizRows.length) {
+      const m = new Map<string, { label: string; revenue: number; returns: number; grossProfit: number }>();
+      for (const p of bizRows) {
+        if (p.date < effRange.from || p.date > effRange.to) continue;
+        const key = histPeriodKey(p.date, effGranularity);
+        let e = m.get(key);
+        if (!e) { e = { label: histPeriodLabel(key, effGranularity), revenue: 0, returns: 0, grossProfit: 0 }; m.set(key, e); }
+        e.revenue += p.revenue; e.returns += p.returns; e.grossProfit += p.gross_profit;
+      }
+      return Array.from(m.values()).map((e) => ({
+        label: e.label,
+        revenue: Math.round(e.revenue),
+        returns: Math.round(e.returns),
+        grossProfit: Math.round(e.grossProfit),
+      }));
+    }
+    return agg.series.map((s) => {
+      let revenue = 0, cogs = 0, returns = 0;
+      for (const [fam, qty] of Object.entries(s.fams)) {
+        const [price, costRatio, returnRate] = econOf(fam);
+        const rev = qty * price;
+        revenue += rev;
+        returns += rev * returnRate;
+        cogs += qty * (1 - returnRate) * price * costRatio; // giá vốn tính trên số bán ròng
+      }
+      return {
+        label: s.label,
+        revenue: Math.round(revenue),
+        returns: Math.round(returns),
+        grossProfit: Math.round(revenue - returns - cogs),
+      };
+    });
+  }, [agg, bizRows, effRange.from, effRange.to, effGranularity]);
+
+  // Tổng hợp chỉ số kinh doanh cho TOÀN KỲ ĐANG CHỌN (đầu vào các thẻ KPI)
+  const periodBiz = useMemo(() => {
+    let invoices = 0, revenue = 0, returns = 0, cogs = 0;
+    for (const p of bizRows) {
+      if (p.date < effRange.from || p.date > effRange.to) continue;
+      invoices += p.invoices ?? 0;
+      revenue += p.revenue;
+      returns += p.returns;
+      cogs += p.cogs ?? 0;
+    }
+    return { invoices, revenue, returns, net: revenue - returns, cogs, gross: revenue - returns - cogs };
+  }, [bizRows, effRange.from, effRange.to]);
 
   const top10Bars = useMemo(() =>
     agg.topFamilies.slice(0, 10).map(([name, value]) => ({ name, value: Math.round(value) })),
   [agg]);
+
+  // Thị phần Top 4 nhóm hàng — tính theo kỳ đang chọn (thay API family-mix all-time)
+  const mixPie = useMemo(() => {
+    const top = agg.topFamilies.slice(0, 4);
+    const total = agg.topFamilies.reduce((s, [, v]) => s + v, 0);
+    return top.map(([name, value]) => ({
+      name,
+      value: Math.round(value),
+      share: total > 0 ? (value / total) * 100 : 0,
+    }));
+  }, [agg]);
 
   // Chi tiết một ngày cụ thể
   const dayDetail = useMemo(() => {
@@ -997,7 +1156,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     // 2. Ngày đỉnh trong khoảng
     let peakD = ""; let peakV = -1;
     for (const d of allDates) {
-      if (d < range.from || d > range.to) continue;
+      if (d < effRange.from || d > effRange.to) continue;
       if (dailyTotals[d] > peakV) { peakV = dailyTotals[d]; peakD = d; }
     }
     if (peakD) out.push({ tone: "info", text: `Ngày doanh số cao nhất kỳ: ${formatDateVN(peakD)} (${fmt(peakV)} đơn vị) — kiểm tra sẵn nhân sự và kho cho các ngày cao điểm tương tự.` });
@@ -1030,7 +1189,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     }
 
     return out.slice(0, 6);
-  }, [agg, allDates, dailyTotals, range.from, range.to]);
+  }, [agg, allDates, dailyTotals, effRange.from, effRange.to]);
 
   if (loading) {
     return (
@@ -1054,84 +1213,13 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   }
 
   const histTotal = agg.series.reduce((s, x) => s + x.total, 0);
-  const granLabel = granularity === "day" ? "ngày" : granularity === "month" ? "tháng" : "quý";
+  const granLabel = effGranularity === "day" ? "ngày" : effGranularity === "month" ? "tháng" : "quý";
 
   return (
     <div className="space-y-5">
       <SectionHeader title="Phân tích sản phẩm" sub="Hiệu suất danh mục — Dự báo LightGBM (backend) + Doanh số thực tế 2016–2017 (dataset)" />
 
-      {/* KPI */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard
-          label={`Tổng dự báo ${horizon ? `(${horizon.from.slice(5)} → ${(winLastDate || horizon.to).slice(5)})` : ""}`}
-          value={totalForecast != null ? fmt(totalForecast) : "—"}
-          sub="Đơn vị số lượng bán" trend="up" color="blue"
-        />
-        <StatCard
-          label="Số sản phẩm trong danh mục"
-          value={skuCount != null ? skuCount.toLocaleString("vi-VN") : "—"}
-          sub="SKU đang quản lý" trend="up" color="green"
-        />
-        <StatCard
-          label="Doanh số thực tế (kỳ chọn)"
-          value={histRows.length ? fmt(histTotal) : "—"}
-          sub={`${agg.series.length} ${granLabel} trong khoảng`} trend="up" color="purple"
-        />
-        <StatCard
-          label="Trung bình mỗi kỳ (thực tế)"
-          value={histRows.length && agg.series.length ? fmt(histTotal / agg.series.length) : "—"}
-          sub="Toàn bộ ngành hàng" trend="up" color="amber"
-        />
-      </div>
-
-      {/* Xu hướng dự báo theo danh mục (backend) + chọn cửa sổ dự báo */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Xu hướng dự báo theo danh mục</p>
-            <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-              Đơn vị: số lượng bán / ngày — model LightGBM{horizon ? `, kỳ ${horizon.from} → ${(winLastDate || horizon.to)}` : ""}
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono text-slate-400 uppercase mr-1">Cửa sổ</span>
-            {[7, 14, 21, 31].map((d) => (
-              <button
-                key={d}
-                onClick={() => setTrendDays(d)}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${trendDays === d ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
-              >
-                {d} ngày
-              </button>
-            ))}
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={trendRows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-            <defs>
-              {families.map((f, i) => (
-                <linearGradient key={f} id={`grad-${i}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.25} />
-                  <stop offset="95%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-            <XAxis dataKey="date" tickFormatter={(v: string) => (v || "").slice(5)}
-              tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
-              tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}`} />
-            <Tooltip content={<ChartTip />} />
-            <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
-            {families.map((f, i) => (
-              <Area key={f} type="monotone" dataKey={f} name={f}
-                stroke={CHART_COLORS[i % CHART_COLORS.length]} fill={`url(#grad-${i})`} strokeWidth={2} />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Bộ điều khiển thời gian phần doanh số thực tế */}
+      {/* Bộ điều khiển thời gian — áp dụng cho toàn bộ các bảng/dữ liệu thực tế bên dưới */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex gap-1.5">
           {([["day", "Ngày"], ["month", "Tháng"], ["quarter", "Quý"]] as [HistGranularity, string][]).map(([k, l]) => (
@@ -1183,34 +1271,112 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
         )}
       </div>
 
-      {/* Hàng biểu đồ lịch sử 1: tổng theo thời gian + top 10 nhóm hàng */}
+      {/* KPI chỉ số kinh doanh theo kỳ đang chọn (từ dữ liệu backend) — 2 hàng x 3 thẻ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard
+          label="Số hóa đơn"
+          value={bizRows.length ? fmt(periodBiz.invoices) : "—"}
+          sub="Giao dịch ghi nhận trong kỳ" trend="up" color="blue"
+        />
+        <StatCard
+          label="Doanh thu"
+          value={bizRows.length ? fmtMoney(periodBiz.revenue) : "—"}
+          sub={`Kỳ ${effRange.from ? `${formatDateVN(effRange.from)}${effRange.to !== effRange.from ? ` → ${formatDateVN(effRange.to)}` : ""}` : "—"}`} trend="up" color="green"
+        />
+        <StatCard
+          label="Giá trị trả"
+          value={bizRows.length ? fmtMoney(periodBiz.returns) : "—"}
+          sub={`${periodBiz.revenue > 0 ? ((periodBiz.returns / periodBiz.revenue) * 100).toFixed(1) : "0"}% doanh thu`} trend="down" color="red"
+        />
+        <StatCard
+          label="Doanh thu thuần"
+          value={bizRows.length ? fmtMoney(periodBiz.net) : "—"}
+          sub="Doanh thu − Giá trị trả" trend="up" color="purple"
+        />
+        <StatCard
+          label="Tổng giá vốn"
+          value={bizRows.length ? fmtMoney(periodBiz.cogs) : "—"}
+          sub="Giá vốn hàng bán ròng" trend="up" color="amber"
+        />
+        <StatCard
+          label="Lợi nhuận gộp"
+          value={bizRows.length ? fmtMoney(periodBiz.gross) : "—"}
+          sub={`Biên ${periodBiz.net > 0 ? ((periodBiz.gross / periodBiz.net) * 100).toFixed(1) : "0"}% trên DT thuần`} trend="up" color="blue"
+        />
+      </div>
+
+      {/* Xu hướng dự báo theo danh mục (backend) + chọn cửa sổ dự báo */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Xu hướng dự báo theo danh mục</p>
+            <p className="text-[10px] font-mono text-slate-500 mt-0.5">
+              Đơn vị: số lượng bán / ngày — model LightGBM{horizon ? `, kỳ ${horizon.from} → ${(winLastDate || horizon.to)}` : ""}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-slate-400 uppercase mr-1">Cửa sổ</span>
+            {[7, 14, 21, 31].map((d) => (
+              <button
+                key={d}
+                onClick={() => setTrendDays(d)}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${trendDays === d ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
+              >
+                {d} ngày
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={trendRows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              {families.map((f, i) => (
+                <linearGradient key={f} id={`grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.25} />
+                  <stop offset="95%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0} />
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={(v: string) => (v || "").slice(5)}
+              tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
+              tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}`} />
+            <Tooltip content={<ChartTip />} />
+            <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
+            {families.map((f, i) => (
+              <Area key={f} type="monotone" dataKey={f} name={f}
+                stroke={CHART_COLORS[i % CHART_COLORS.length]} fill={`url(#grad-${i})`} strokeWidth={2} />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Hàng biểu đồ lịch sử 1: chỉ số kinh doanh + top 10 nhóm hàng */}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
         <div className="xl:col-span-3 bg-white border border-slate-200 rounded-xl p-5">
-          <p className="text-sm font-semibold text-slate-900">Doanh số thực tế theo thời gian</p>
+          <p className="text-sm font-semibold text-slate-900">Chỉ số kinh doanh theo thời gian</p>
           <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-4">
-            Thang {granLabel} · {range.from ? `${formatDateVN(range.from)} → ${formatDateVN(range.to)}` : "—"} · nguồn dataset bán hàng (toàn chuỗi)
+            Thang {granLabel}{!specificDate && customSpanDays <= 61 ? " (tự động)" : ""} · {effRange.from ? `${formatDateVN(effRange.from)} → ${formatDateVN(effRange.to)}` : "—"} · Quy đổi VND (tỷ giá tham chiếu 1 USD = 25.500₫) — ước tính từ số lượng bán × giá tham chiếu
           </p>
-          {!bounds.min ? (
-            <div className="h-[260px] flex items-center justify-center text-slate-400 text-xs">Đang tải dataset bán hàng...</div>
+          {!bounds.min || bizState === "loading" ? (
+            <div className="h-[260px] flex items-center justify-center text-slate-400 text-xs">Đang tải dữ liệu chỉ số kinh doanh...</div>
           ) : trendChartData.length === 0 ? (
             <div className="h-[260px] flex items-center justify-center text-slate-400 text-xs">Không có dữ liệu trong khoảng đã chọn.</div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={trendChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gradHistTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.22} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <LineChart data={trendChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                 <XAxis dataKey="label" interval="preserveStartEnd"
                   tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}`} />
-                <Tooltip content={<ChartTip />} />
-                <Area type="monotone" dataKey="total" name="Doanh số" stroke="#3b82f6" fill="url(#gradHistTotal)" strokeWidth={2} />
-              </AreaChart>
+                <YAxis tickFormatter={fmtMoneyCompact}
+                  tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                <Tooltip content={<BizTip />} />
+                <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
+                <Line type="monotone" dataKey="revenue" name="Doanh thu" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="returns" name="Trả hàng" stroke="#ef4444" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="grossProfit" name="Lợi nhuận gộp" stroke="#10b981" strokeWidth={2} dot={false} />
+              </LineChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -1231,56 +1397,6 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
                 <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
                 <Bar dataKey="value" name="Doanh số" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={14} />
               </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* Hàng biểu đồ lịch sử 2: tăng trưởng theo kỳ + dễ hỏng vs bền */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <p className="text-sm font-semibold text-slate-900">Tổng doanh số & mức thay đổi</p>
-          <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-4">Cột: tổng mỗi kỳ — Đường: % thay đổi so với kỳ trước</p>
-          {trendChartData.length < 2 ? (
-            <div className="h-[240px] flex items-center justify-center text-slate-400 text-xs">Cần ít nhất 2 kỳ để tính mức thay đổi.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <ComposedChart data={trendChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="label" interval="preserveStartEnd"
-                  tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="l" tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}`} />
-                <YAxis yAxisId="r" orientation="right" tickFormatter={(v) => `${v}%`}
-                  tick={{ fill: "#a855f7", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTip />} />
-                <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
-                <Bar yAxisId="l" dataKey="total" name="Tổng doanh số" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                <Line yAxisId="r" type="monotone" dataKey="growth" name="% thay đổi" stroke="#a855f7" strokeWidth={2}
-                  dot={{ r: 2, fill: "#a855f7", strokeWidth: 0 }} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <p className="text-sm font-semibold text-slate-900">Hàng dễ hỏng vs hàng bền</p>
-          <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-4">Nhìn nhận mùa vụ của hàng tươi (PRODUCE, DAIRY...)</p>
-          {trendChartData.length === 0 ? (
-            <div className="h-[240px] flex items-center justify-center text-slate-400 text-xs">Không có dữ liệu.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={trendChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="label" interval="preserveStartEnd"
-                  tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}`} />
-                <Tooltip content={<ChartTip />} />
-                <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
-                <Line type="monotone" dataKey="perishable" name="Dễ hỏng" stroke="#ef4444" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="durable" name="Hàng bền" stroke="#10b981" strokeWidth={2} dot={false} />
-              </LineChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -1345,29 +1461,31 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
         </div>
       </div>
 
-      {/* Thị phần danh mục (giữ nguyên pie) */}
+      {/* Thị phần danh mục — theo kỳ đang chọn */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <p className="text-sm font-semibold text-slate-900">Thị phần danh mục</p>
-        <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-3">Tổng unit sales năm 2016 theo nhóm hàng{branchId !== "all" ? ` — Cửa hàng #${branchId}` : ""}</p>
+        <p className="text-sm font-semibold text-slate-900">Thị phần danh mục (Top 4 nhóm hàng)</p>
+        <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-3">
+          Theo kỳ đang chọn: {effRange.from ? `${formatDateVN(effRange.from)} → ${formatDateVN(effRange.to)}` : "—"}{branchId !== "all" ? ` — Cửa hàng #${branchId}` : ""}
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={38} outerRadius={70} paddingAngle={3} dataKey="value">
-                {pieData.map((_, i) => (<Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />))}
+              <Pie data={mixPie} cx="50%" cy="50%" innerRadius={38} outerRadius={70} paddingAngle={3} dataKey="value" nameKey="name">
+                {mixPie.map((_, i) => (<Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />))}
               </Pie>
               <Tooltip content={<ChartTip />} />
             </PieChart>
           </ResponsiveContainer>
           <div className="space-y-1.5">
-            {pieData.length === 0 ? (
-              <p className="text-slate-500 text-xs">Chưa có dữ liệu thị phần.</p>
-            ) : pieData.map((d, i) => (
+            {mixPie.length === 0 ? (
+              <p className="text-slate-500 text-xs">Chưa có dữ liệu thị phần trong kỳ này.</p>
+            ) : mixPie.map((d, i) => (
               <div key={d.name} className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
                   <span className="text-[11px] text-slate-700">{d.name}</span>
                 </div>
-                <span className="text-[10px] font-mono text-slate-500">{d.value.toLocaleString("vi-VN")}</span>
+                <span className="text-[10px] font-mono text-slate-500">{d.share.toFixed(1)}% · {d.value.toLocaleString("vi-VN")} đơn vị</span>
               </div>
             ))}
           </div>
@@ -1385,6 +1503,9 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [lowStockCount, setLowStockCount] = useState(0);
+  // Ngưỡng cảnh báo tồn kho do backend tính (30 × số cửa hàng trong phạm vi);
+  // fallback heuristic cũ nếu backend chưa trả trường này.
+  const [lowStockThreshold, setLowStockThreshold] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 15;
   const [search, setSearch] = useState("");
@@ -1405,6 +1526,8 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
 
   const storeParam = branchId !== "all" ? `&store_nbr=${branchId}` : "";
   const isRealStore = branchId === "all" || /^\d+$/.test(branchId);
+  // Ngưỡng tô màu tồn kho thấp - ưu tiên giá trị backend trả về
+  const stockWarnThreshold = lowStockThreshold ?? (branchId !== "all" ? 30 : 600);
 
   // Danh sách nhóm hàng cho dropdown lọc
   useEffect(() => {
@@ -1436,6 +1559,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
         setTotal(data.total);
         setTotalPages(data.total_pages);
         setLowStockCount(data.low_stock_count ?? 0);
+        setLowStockThreshold(data.low_stock_threshold ?? null);
       })
       .catch((e) => { if (!cancelled) setErr(e?.message || "Không tải được danh sách sản phẩm."); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -1493,6 +1617,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
           setTotal(d.total);
           setTotalPages(d.total_pages);
           setLowStockCount(d.low_stock_count ?? 0);
+          setLowStockThreshold(d.low_stock_threshold ?? null);
         })
         .finally(() => setLoading(false));
     } catch (e: any) {
@@ -1527,7 +1652,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Tìm theo mã sản phẩm, nhóm hàng..."
+            placeholder="Tìm theo tên sản phẩm, mã SP, nhóm hàng..."
             className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-4 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500/40 transition-colors"
           />
         </div>
@@ -1564,6 +1689,9 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
                   <button className="flex items-center gap-1 hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("item")}>Mã SP <SortIcon k="item" /></button>
                 </th>
+                <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                  <button className="flex items-center gap-1 hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("name")}>Tên sản phẩm <SortIcon k="name" /></button>
+                </th>
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Nhóm hàng</th>
                 <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Class</th>
                 <th className="text-center px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Dễ hỏng</th>
@@ -1585,14 +1713,20 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={branchId !== "all" ? 10 : 9} className="text-center py-8 text-slate-500 text-sm">
+                <tr><td colSpan={branchId !== "all" ? 11 : 10} className="text-center py-8 text-slate-500 text-sm">
                   <RefreshCw size={14} className="animate-spin inline mr-2" />Đang tải...
                 </td></tr>
               ) : products.length === 0 ? (
-                <tr><td colSpan={branchId !== "all" ? 10 : 9} className="text-center py-8 text-slate-500 text-sm">Không có sản phẩm nào khớp bộ lọc.</td></tr>
+                <tr><td colSpan={branchId !== "all" ? 11 : 10} className="text-center py-8 text-slate-500 text-sm">Không có sản phẩm nào khớp bộ lọc.</td></tr>
               ) : products.map((p) => (
                 <tr key={p.item_nbr} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3"><span className="text-xs font-mono font-medium text-slate-900">#{p.item_nbr}</span></td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-[240px]">
+                      <div className="text-xs text-slate-900 truncate" title={p.name ?? undefined}>{p.name ?? "—"}</div>
+                      <div className="text-[10px] font-mono text-slate-400 sm:hidden">#{p.item_nbr}</div>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md whitespace-nowrap">{p.family}</span>
                   </td>
@@ -1603,7 +1737,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`text-xs font-mono ${p.stock === 0 ? "text-red-500" : p.stock < 30 * (branchId !== "all" ? 1 : 20) ? "text-orange-500" : "text-emerald-500"}`}>
+                    <span className={`text-xs font-mono ${p.stock === 0 ? "text-red-500" : p.stock < stockWarnThreshold ? "text-orange-500" : "text-emerald-500"}`}>
                       {Math.round(p.stock).toLocaleString("vi-VN")}
                     </span>
                   </td>
@@ -1672,9 +1806,11 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-sm p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-900">Nhập hàng — #{restockTarget.item_nbr}</p>
+                <p className="text-sm font-semibold text-slate-900" title={restockTarget.name ?? undefined}>
+                  Nhập hàng — {restockTarget.name ?? `#${restockTarget.item_nbr}`}
+                </p>
                 <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-                  Cửa hàng #{branchId} · Tồn kho hiện tại: {Math.round(restockTarget.stock).toLocaleString("vi-VN")}
+                  #{restockTarget.item_nbr} · Cửa hàng #{branchId} · Tồn kho hiện tại: {Math.round(restockTarget.stock).toLocaleString("vi-VN")}
                 </p>
               </div>
             </div>
@@ -1711,13 +1847,14 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
 }
 
 /* ── Nav config ───────────────────────────────────────────────── */
-type View = "sales" | "chatbot" | "analysis" | "products";
+type View = "sales" | "chatbot" | "analysis" | "products" | "scenario";
 
 const navItems: { id: View; label: string; icon: ElementType }[] = [
   { id: "sales", label: "Dự báo doanh số", icon: TrendingUp },
   { id: "chatbot", label: "AI Chatbot", icon: Bot },
   { id: "analysis", label: "Phân tích sản phẩm", icon: BarChart2 },
   { id: "products", label: "Quản lý sản phẩm", icon: Package },
+  { id: "scenario", label: "Kịch bản What-if", icon: FlaskConical },
 ];
 
 /* ── Thanh chọn cơ sở: kéo ngang bằng chuột ──────────────────── */
@@ -1833,6 +1970,450 @@ function BranchBar({ branches, branchId, onSelect }: {
       >
         <ChevronRight size={14} />
       </button>
+    </div>
+  );
+}
+
+/* ── Section: Kịch bản What-if (Scenario Lab) ─────────────────── */
+interface ScenarioMeta {
+  store_nbr: number;
+  family: string;
+  future_dates: string[];
+  default_stock: number;
+  default_lead_time: number;
+  sku_count: number;
+  unit_price: number;
+  baseline_promo_days: number;
+  current_oil_price: number | null;
+  last_transactions: number;
+}
+
+interface ScenarioKpi {
+  baseline_total: number;
+  scenario_total: number;
+  delta: number;
+  delta_pct: number | null;
+  stock: number;
+  days_of_cover: number;
+  shortfall: number;
+  excess: number;
+  will_stockout: boolean;
+  overstock: boolean;
+  risk_level: string;
+  verdict: string;
+  unit_price: number;
+  expected_revenue_usd: number;
+  baseline_revenue_usd: number;
+  lost_revenue_usd: number;
+}
+
+interface ScenarioSkuRow {
+  item_nbr: number;
+  baseline_total: number;
+  scenario_total: number;
+  delta: number;
+  delta_pct: number | null;
+  stock: number;
+  shortfall: number;
+}
+
+interface ScenarioResult {
+  status: string;
+  source: string;
+  store_nbr: number;
+  family: string;
+  horizon_days: number;
+  future_dates: string[];
+  baseline_series: Array<{ date: string; predicted_sales: number }>;
+  scenario_series: Array<{ date: string; predicted_sales: number }>;
+  sku_count: number;
+  inventory: { stock: number; lead_time: number; sku_count: number; stock_used: number; lead_time_used: number };
+  kpi: ScenarioKpi;
+  analysis: string;
+  recommendation: string;
+  top_sku_movements: ScenarioSkuRow[];
+}
+
+function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
+  branchId: string; apiBase: string; auth: AuthInfo; onAuthError: () => void;
+}) {
+  const [stores, setStores] = useState<number[]>([]);
+  const [store, setStore] = useState<number | null>(/^\d+$/.test(branchId) ? Number(branchId) : null);
+  const [families, setFamilies] = useState<string[]>([]);
+  const [family, setFamily] = useState("");
+  const [meta, setMeta] = useState<ScenarioMeta | null>(null);
+  const [metaErr, setMetaErr] = useState("");
+
+  // Các núm chỉnh kịch bản ("" = dùng giá trị thật)
+  const [multiplier, setMultiplier] = useState(1);
+  const [promoMode, setPromoMode] = useState<"real" | "custom">("real");
+  const [promoDays, setPromoDays] = useState(8);
+  const [oil, setOil] = useState("");
+  const [trafficOn, setTrafficOn] = useState(false);
+  const [traffic, setTraffic] = useState(20);
+  const [eventType, setEventType] = useState<"none" | "holiday" | "earthquake">("none");
+  const [eventDays, setEventDays] = useState(3);
+  const [stock, setStock] = useState("");
+  const [leadTime, setLeadTime] = useState("");
+
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<ScenarioResult | null>(null);
+  const [err, setErr] = useState("");
+
+  // Danh sách cửa hàng + ngành hàng (lấy 1 lần)
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      apiFetch(apiBase, "/api/stores", auth),
+      apiFetch(apiBase, "/api/product-families", auth),
+    ])
+      .then(([sRes, fRes]) => {
+        if (sRes.status === 401 || fRes.status === 401) { onAuthError(); return Promise.reject(); }
+        return Promise.all([sRes.json(), fRes.ok ? fRes.json() : Promise.resolve([])]);
+      })
+      .then(([sList, fList]) => {
+        if (cancelled) return;
+        if (Array.isArray(sList)) setStores(sList);
+        if (Array.isArray(fList)) setFamilies(fList);
+      })
+      .catch(() => { /* để trống dropdown, user vẫn thấy lỗi khi chạy */ });
+    return () => { cancelled = true; };
+  }, [apiBase, auth, onAuthError]);
+
+  // Chọn cửa hàng mặc định theo tab cơ sở đang mở
+  useEffect(() => {
+    if (store === null && stores.length > 0) {
+      const preferred = /^\d+$/.test(branchId) ? Number(branchId) : NaN;
+      setStore(Number.isFinite(preferred) && stores.includes(preferred) ? preferred : stores[0]);
+    }
+  }, [stores, store, branchId]);
+
+  // Meta mặc định cho form prefill theo (store, family)
+  useEffect(() => {
+    if (!store || !family) { setMeta(null); return; }
+    let cancelled = false;
+    setMetaErr("");
+    apiFetch(apiBase, `/api/scenario/meta?store_nbr=${store}&family=${encodeURIComponent(family)}`, auth)
+      .then((res) => {
+        if (res.status === 401) { onAuthError(); return Promise.reject(); }
+        return res.ok ? res.json() : res.json().then((d) => { throw new Error(d?.detail || `Lỗi ${res.status}`); });
+      })
+      .then((m) => { if (!cancelled) setMeta(m); })
+      .catch((e) => { if (!cancelled) { setMeta(null); setMetaErr(e?.message || "Không tải được thông tin mặc định."); } });
+    return () => { cancelled = true; };
+  }, [store, family, apiBase, auth, onAuthError]);
+
+  async function runScenario() {
+    if (!store || !family) return;
+    setRunning(true);
+    setErr("");
+    setResult(null);
+    try {
+      const body: Record<string, unknown> = {
+        store_nbr: store,
+        family,
+        demand_multiplier: Number(multiplier) || 1,
+        event_type: eventType,
+        event_days: eventType === "none" ? 0 : eventDays,
+      };
+      if (promoMode === "custom") body.promo_days = Number(promoDays) || 0;
+      if (oil !== "" && oil !== null) body.oil_price = Number(oil);
+      if (trafficOn) body.traffic_change_pct = Number(traffic) || 0;
+      if (stock !== "") body.stock_override = Number(stock);
+      if (leadTime !== "") body.lead_time_override = Number(leadTime);
+      const res = await apiFetch(apiBase, "/api/scenario/run", auth, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401) { onAuthError(); return; }
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(typeof data?.detail === "string" ? data.detail : `Lỗi ${res.status}`);
+      setResult(data as ScenarioResult);
+    } catch (e: any) {
+      setErr(e?.message || "Không chạy được kịch bản.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  // Gộp 2 series theo ngày cho biểu đồ
+  const chartData = useMemo(() => {
+    if (!result) return [];
+    const base = new Map(result.baseline_series.map((p) => [p.date, p.predicted_sales]));
+    return result.scenario_series.map((p) => ({
+      date: p.date.slice(5),
+      hientai: Math.round(base.get(p.date) ?? 0),
+      kichban: Math.round(p.predicted_sales),
+    }));
+  }, [result]);
+
+  const kpi = result?.kpi;
+  const isNeutral = Number(multiplier) === 1 && promoMode === "real" && oil === ""
+    && !trafficOn && eventType === "none" && stock === "" && leadTime === "";
+
+  const inputCls = "bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40";
+  const knobLabel = "text-[10px] font-mono text-slate-500 uppercase tracking-wide";
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader title="Kịch bản What-if" sub="Sửa số liệu → dự báo lại bằng mô hình thật → phân tích tác động tức thì" />
+
+      {/* Cấu hình kịch bản */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <MapPin size={12} className="text-slate-400 shrink-0" /> Cửa hàng
+            <select value={store ?? ""} onChange={(e) => setStore(Number(e.target.value))} className={inputCls}>
+              {(stores.length ? stores : (store ? [store] : [])).map((s) => (
+                <option key={s} value={s}>Cửa hàng #{s}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <Package size={12} className="text-slate-400 shrink-0" /> Ngành hàng
+            <select value={family} onChange={(e) => setFamily(e.target.value)} className={`${inputCls} max-w-[220px]`}>
+              <option value="">— chọn ngành hàng —</option>
+              {families.map((f) => (<option key={f} value={f}>{f}</option>))}
+            </select>
+          </label>
+          {meta && (
+            <span className="text-[10px] font-mono text-slate-400">
+              {meta.sku_count} SKU · giá ref ${meta.unit_price}/đơn vị · KM baseline {meta.baseline_promo_days}/16 ngày
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-4">
+          {/* 1. Hệ số nhu cầu */}
+          <div className="space-y-1.5">
+            <p className={knobLabel}>1 · Hệ số nhu cầu thị trường</p>
+            <div className="flex items-center gap-2">
+              <input type="range" min={0.5} max={2} step={0.05} value={multiplier}
+                onChange={(e) => setMultiplier(Number(e.target.value))} className="flex-1 accent-blue-600" />
+              <span className="text-xs font-mono text-slate-700 w-14 text-right">×{multiplier.toFixed(2)}</span>
+            </div>
+            <p className="text-[10px] text-slate-400">1.00 = giữ nguyên · 1.50 = +50% · 0.80 = −20%</p>
+          </div>
+
+          {/* 2. Khuyến mãi */}
+          <div className="space-y-1.5">
+            <p className={knobLabel}>2 · Khuyến mãi (onpromotion)</p>
+            <div className="flex gap-1.5">
+              <button onClick={() => setPromoMode("real")}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${promoMode === "real" ? "bg-blue-50 border-blue-200 text-blue-600" : "border-slate-200 text-slate-500"}`}>
+                Lịch thật{meta ? ` (${meta.baseline_promo_days} ngày)` : ""}
+              </button>
+              <button onClick={() => setPromoMode("custom")}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${promoMode === "custom" ? "bg-blue-50 border-blue-200 text-blue-600" : "border-slate-200 text-slate-500"}`}>
+                Tùy chỉnh
+              </button>
+            </div>
+            {promoMode === "custom" && (
+              <div className="flex items-center gap-2">
+                <input type="range" min={0} max={16} step={1} value={promoDays}
+                  onChange={(e) => setPromoDays(Number(e.target.value))} className="flex-1 accent-blue-600" />
+                <span className="text-xs font-mono text-slate-700 w-14 text-right">{promoDays} ngày</span>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Giá dầu */}
+          <div className="space-y-1.5">
+            <p className={knobLabel}>3 · Giá dầu (USD)</p>
+            <div className="flex items-center gap-2">
+              <input type="number" min={20} max={200} step={0.5} value={oil}
+                onChange={(e) => setOil(e.target.value)} placeholder={meta?.current_oil_price ? String(meta.current_oil_price) : "giá thật"}
+                className={`${inputCls} w-28`} />
+              {oil !== "" && (
+                <button onClick={() => setOil("")} className="text-[10px] text-slate-400 hover:text-blue-600 underline underline-offset-2">Dùng giá thật</button>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400">Để trống = giá dầu thật từ oil.csv</p>
+          </div>
+
+          {/* 4. Lưu lượng khách */}
+          <div className="space-y-1.5">
+            <p className={knobLabel}>4 · Lưu lượng khách</p>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setTrafficOn(!trafficOn)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${trafficOn ? "bg-blue-50 border-blue-200 text-blue-600" : "border-slate-200 text-slate-500"}`}>
+                {trafficOn ? "Đang chỉnh" : "Giữ nguyên"}
+              </button>
+              {trafficOn && (
+                <>
+                  <input type="range" min={-50} max={100} step={5} value={traffic}
+                    onChange={(e) => setTraffic(Number(e.target.value))} className="flex-1 accent-blue-600" />
+                  <span className="text-xs font-mono text-slate-700 w-14 text-right">{traffic > 0 ? "+" : ""}{traffic}%</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 5. Sự kiện bất ngờ */}
+          <div className="space-y-1.5">
+            <p className={knobLabel}>5 · Sự kiện bất ngờ</p>
+            <div className="flex items-center gap-2">
+              <select value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)} className={inputCls}>
+                <option value="none">Không có</option>
+                <option value="holiday">Ngày lễ đột xuất</option>
+                <option value="earthquake">Thiên tai (cú sốc nhu cầu)</option>
+              </select>
+              {eventType !== "none" && (
+                <div className="flex items-center gap-1.5">
+                  <input type="number" min={1} max={16} value={eventDays}
+                    onChange={(e) => setEventDays(Math.max(1, Math.min(16, Number(e.target.value) || 1)))}
+                    className={`${inputCls} w-16`} />
+                  <span className="text-[10px] text-slate-400">ngày đầu kỳ</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 6. Tồn kho + lead time */}
+          <div className="space-y-1.5">
+            <p className={knobLabel}>6 · Tồn kho & lead time (tầng phân tích)</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input type="number" min={0} step={1} value={stock} onChange={(e) => setStock(e.target.value)}
+                placeholder={meta ? `tồn thật ${Math.round(meta.default_stock)}` : "tồn thật"} className={`${inputCls} w-32`} />
+              <input type="number" min={0} max={60} step={0.5} value={leadTime} onChange={(e) => setLeadTime(e.target.value)}
+                placeholder={meta ? `LT ${meta.default_lead_time} ngày` : "lead time"} className={`${inputCls} w-24`} />
+              {(stock !== "" || leadTime !== "") && (
+                <button onClick={() => { setStock(""); setLeadTime(""); }}
+                  className="text-[10px] text-slate-400 hover:text-blue-600 underline underline-offset-2">Dùng giá trị thật</button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button onClick={runScenario} disabled={running || !store || !family}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium px-4 py-2.5 rounded-lg transition-colors">
+            {running ? <RefreshCw size={13} className="animate-spin" /> : <FlaskConical size={13} />}
+            {running ? "Đang chạy dự báo..." : "Chạy kịch bản"}
+          </button>
+          {isNeutral && !running && (
+            <span className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+              Chưa chỉnh số liệu nào — kết quả sẽ xấp xỉ hiện tại, dùng để kiểm tra mô hình.
+            </span>
+          )}
+        </div>
+        {metaErr && (
+          <p className="text-[11px] text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-2.5 py-2">{metaErr}</p>
+        )}
+      </div>
+
+      {/* Lỗi */}
+      {err && (
+        <div className="bg-red-500/10 border border-red-500/25 rounded-lg px-4 py-3 text-sm text-red-600">{err}</div>
+      )}
+
+      {/* Kết quả */}
+      {result && kpi && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard label="Dự báo kịch bản (tổng kỳ)" value={fmt(kpi.scenario_total)}
+              sub={`Hiện tại: ${fmt(kpi.baseline_total)} · nguồn: ${result.source === "ml_service" ? "model thật" : "xấp xỉ"}`}
+              trend={kpi.delta >= 0 ? "up" : "down"} color="purple" />
+            <StatCard label="Thay đổi so với hiện tại"
+              value={`${kpi.delta_pct !== null ? (kpi.delta_pct > 0 ? "+" : "") + kpi.delta_pct.toFixed(1) + "%" : "—"}`}
+              sub={`${fmt(kpi.delta)} đơn vị`} trend={kpi.delta >= 0 ? "up" : "down"}
+              color={kpi.delta >= 0 ? "green" : "amber"} />
+            <StatCard label={kpi.will_stockout ? "Thiếu hàng (nếu không nhập)" : kpi.overstock ? "Dư tồn" : "Đủ hàng"}
+              value={fmt(kpi.will_stockout ? kpi.shortfall : kpi.overstock ? kpi.excess : 0)}
+              sub={`Tồn ${fmt(kpi.stock)} · phủ ~${kpi.days_of_cover} ngày`}
+              trend={kpi.will_stockout ? "down" : "up"} color={kpi.will_stockout ? "amber" : "green"} />
+            <StatCard label="Doanh thu kỳ vọng" value={`$${fmtMoney(kpi.expected_revenue_usd)}`}
+              sub={kpi.will_stockout ? `Rủi ro mất ~$${fmtMoney(kpi.lost_revenue_usd)}` : `Hiện tại: $${fmtMoney(kpi.baseline_revenue_usd)}`}
+              trend="up" color="blue" />
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Dự báo theo ngày: hiện tại vs kịch bản</p>
+                  <p className="text-[10px] font-mono text-slate-500 mt-0.5">
+                    {result.family} · cửa hàng #{result.store_nbr} · {result.horizon_days} ngày
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-slate-400 rounded inline-block" />Hiện tại</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-blue-600 rounded inline-block" />Kịch bản</span>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTip />} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line type="monotone" dataKey="hientai" name="Hiện tại" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  <Line type="monotone" dataKey="kichban" name="Kịch bản" stroke="#2563eb" strokeWidth={2.5}
+                    dot={{ fill: "#2563eb", r: 3, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="space-y-4">
+              <div className={`border rounded-xl p-5 ${kpi.will_stockout ? "bg-red-500/5 border-red-500/25" : kpi.overstock ? "bg-amber-500/5 border-amber-500/25" : "bg-emerald-500/5 border-emerald-500/25"}`}>
+                <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+                  Kết luận · rủi ro {kpi.risk_level}
+                </p>
+                <p className="text-sm text-slate-800 whitespace-pre-line leading-relaxed">{result.analysis}</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-blue-500 mb-2">Khuyến nghị hành động</p>
+                <p className="text-sm text-slate-800 leading-relaxed">{result.recommendation}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Top SKU biến động */}
+          {result.top_sku_movements.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <div className="flex items-baseline justify-between mb-3">
+                <p className="text-sm font-semibold text-slate-900">Top SKU biến động nhiều nhất</p>
+                <p className="text-[9px] font-mono text-slate-400 uppercase">phân rã từ {result.sku_count} SKU theo ngành</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-[10px] font-mono text-slate-400 uppercase border-b border-slate-200">
+                      <th className="py-2 pr-3">SKU</th>
+                      <th className="py-2 pr-3 text-right">Hiện tại</th>
+                      <th className="py-2 pr-3 text-right">Kịch bản</th>
+                      <th className="py-2 pr-3 text-right">Δ</th>
+                      <th className="py-2 pr-3 text-right">Tồn</th>
+                      <th className="py-2 text-right">Thiếu</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.top_sku_movements.map((r) => (
+                      <tr key={r.item_nbr} className="border-b border-slate-100 last:border-0">
+                        <td className="py-2 pr-3 font-mono text-slate-700">#{r.item_nbr}</td>
+                        <td className="py-2 pr-3 text-right font-mono text-slate-500">{fmt(r.baseline_total)}</td>
+                        <td className="py-2 pr-3 text-right font-mono text-slate-800">{fmt(r.scenario_total)}</td>
+                        <td className={`py-2 pr-3 text-right font-mono ${r.delta >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {r.delta >= 0 ? "+" : ""}{fmt(r.delta)}
+                        </td>
+                        <td className="py-2 pr-3 text-right font-mono text-slate-500">{fmt(r.stock)}</td>
+                        <td className={`py-2 text-right font-mono ${r.shortfall > 0 ? "text-red-500 font-medium" : "text-slate-400"}`}>
+                          {fmt(r.shortfall)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2">
+                Phân rã SKU theo tỷ trọng dự báo hiện có — số liệu SKU mang tính xấp xỉ.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2042,6 +2623,7 @@ export default function App() {
           {view === "chatbot" && <AIChatbot apiBase={apiBase} auth={auth} onAuthError={handleAuthError} />}
           {view === "analysis" && <ProductAnalysis branchId={branchId} apiBase={apiBase} auth={auth} onAuthError={handleAuthError} />}
           {view === "products" && <ProductManagement branchId={branchId} apiBase={apiBase} auth={auth} onAuthError={handleAuthError} />}
+          {view === "scenario" && <ScenarioLab branchId={branchId} apiBase={apiBase} auth={auth} onAuthError={handleAuthError} />}
         </main>
       </div>
     </div>

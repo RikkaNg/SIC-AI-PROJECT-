@@ -49,7 +49,7 @@ __pycache__/
 # Môi trường ảo (Virtual Environments & Conda)
 venv/
 env/
-env.example/
+.envexample/
 .venv/
 ENV/
 anaconda_projects/
@@ -90,3 +90,9 @@ Thumbs.db
 .vscode/
 *.sublime-project
 *.sublime-workspace
+.zcode/
+
+ML_MODEL_EFFICIENCY_RECOMMENDATIONS.md
+SIC_AI_Capstone_Final_Report.aux
+SIC_AI_Capstone_Final_Report.out
+SIC_AI_Capstone_Final_Report.toc

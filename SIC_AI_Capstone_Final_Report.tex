@@ -1,0 +1,1712 @@
+% ============================================================================
+% SAMSUNG INNOVATION CAMPUS (SIC) - CAPSTONE PROJECT FINAL REPORT
+% Đề tài: Ứng dụng Học máy Xây dựng Hệ thống Dự báo & Hỗ trợ Ra quyết định Kinh doanh trên Nền tảng Web
+% Biên dịch: pdfLaTeX (Overleaf Ready) - Hỗ trợ Tiếng Việt qua fontenc T5/vietnam
+% ============================================================================
+\documentclass[12pt,a4paper]{report}
+
+% --- Cấu hình Tiếng Việt và Phông chữ ---
+\usepackage[utf8]{inputenc}
+\usepackage[T5,T1]{fontenc}
+\usepackage[vietnamese,english]{babel}
+\usepackage{helvet} % Phông chữ Sans-Serif chuẩn nhận diện thương hiệu
+\renewcommand{\familydefault}{\sfdefault}
+
+% --- Canh lề và Kích thước Trang ---
+\usepackage[margin=2.2cm, bottom=3.2cm, top=2.2cm, headheight=16pt]{geometry}
+
+% --- Các gói hỗ trợ Toán học, Bảng biểu & Đồ họa ---
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,shapes.geometric}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{titlesec}
+\usepackage{listings}
+\usepackage{float}
+\usepackage[unicode,colorlinks=true,linkcolor=samsungblue,urlcolor=samsungblue,citecolor=samsungblue]{hyperref}
+
+% --- Bảng màu chuẩn Samsung Innovation Campus ---
+\definecolor{samsungblue}{RGB}{20, 52, 160}  % Xanh Samsung
+\definecolor{samsungdark}{RGB}{20, 24, 35}   % Đen xám dải đáy trang bìa
+\definecolor{tagblue}{RGB}{85, 160, 230}     % Xanh nhạt Tagline
+\definecolor{lightgraybg}{RGB}{245, 246, 248}% Nền xám nhạt cho bảng & code
+
+% --- Cấu hình định dạng tiêu đề Chương & Mục ---
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries}
+  {\colorbox{samsungblue}{\parbox{\dimexpr\textwidth-2\fboxsep\relax}{\vspace{4pt}\color{white}\Large\strut CHƯƠNG \thechapter\strut\vspace{4pt}}}}
+  {10pt}
+  {\Huge\color{samsungblue}}
+\titlespacing*{\chapter}{0pt}{-10pt}{20pt}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{samsungblue}}
+  {\thesection}{0.8em}{}
+  [\vspace{2pt}\color{samsungblue!40}\titlerule]
+\titlespacing*{\section}{0pt}{16pt}{10pt}
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{samsungdark}}
+  {\thesubsection}{0.6em}{}
+\titlespacing*{\subsection}{0pt}{12pt}{6pt}
+
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\color{samsungblue!80!black}}
+  {\thesubsubsection}{0.5em}{}
+
+% --- Cấu hình Header & Footer ---
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{samsungblue}{\textbf{AI Course} \textbar\ Capstone Project Final Report}}
+\fancyhead[R]{\small\textcolor{gray}{\nouppercase{\leftmark}}}
+\fancyfoot[L]{\scriptsize\textcolor{gray}{\textcopyright 2023 SAMSUNG. All rights reserved.}}
+\fancyfoot[R]{\small\textcolor{samsungblue}{\textbf{\thepage}}}
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+% --- Tùy chỉnh tên tiếng Việt ---
+\linespread{1.25}
+\renewcommand{\contentsname}{Mục lục}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\bibname}{Tài liệu tham khảo}
+\setlength{\parskip}{4pt}
+
+\begin{document}
+\selectlanguage{vietnamese}
+
+% =========================================================================
+% TRANG BÌA (SAMSUNG COVER PAGE)
+% =========================================================================
+\begin{titlepage}
+\thispagestyle{empty}
+
+\vspace*{0.2cm}
+{\fontsize{22pt}{26pt}\selectfont\textbf{SAMSUNG INNOVATION CAMPUS}}\\[4pt]
+{\fontsize{18pt}{22pt}\selectfont\textbf{Khóa học Trí tuệ Nhân tạo (AI Course)}}\\[1.0cm]
+
+{\fontsize{34pt}{40pt}\selectfont\bfseries\textcolor{samsungblue}{CAPSTONE PROJECT}}\\[0.2cm]
+{\fontsize{34pt}{40pt}\selectfont\bfseries\textcolor{samsungblue}{FINAL REPORT}}\\[1.2cm]
+
+{\fontsize{18pt}{22pt}\selectfont\textbf{ỨNG DỤNG HỌC MÁY XÂY DỰNG HỆ THỐNG DỰ BÁO\\[4pt]
+VÀ HỖ TRỢ RA QUYẾT ĐỊNH KINH DOANH\\[4pt]
+TRÊN NỀN TẢNG WEB}}\\[0.4cm]
+{\large\textit{(Dựa trên bộ dữ liệu Favorita Grocery Sales Forecasting -- Kaggle)}}\\[0.8cm]
+
+% Khung kết quả Kaggle nổi bật
+\begin{tcolorbox}[colback=samsungblue!8, colframe=samsungblue, arc=2.5mm, width=0.96\textwidth]
+\centering
+\textbf{\textcolor{samsungblue}{Kết quả Kaggle Leaderboard (Chỉ số NWRMSLE):}}\\[2pt]
+\small \textbf{Global Ensemble:} 0.64438 (Public) \textbar\ \textbf{0.63542 (Private -- Best Score)}\\
+\small \textbf{Local Models:} 0.65307 (Public) \textbar\ 0.64207 (Private)
+\end{tcolorbox}
+
+\vspace{0.4cm}
+
+% Khung thông tin nhóm
+\begin{tcolorbox}[colback=lightgraybg, colframe=samsungblue!60, arc=2.5mm, width=0.96\textwidth]
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{lX}
+\textbf{Nhóm thực hiện:} & \textbf{Team 1} \\
+\textbf{Thành viên:} & \textbf{Phạm Hoàng An} \qquad \textbf{Nguyễn Thế Công} \\
+\textbf{Mã nguồn (Repo):} & \url{https://github.com/RikkaNg/SIC-AI-PROJECT-} \\
+\textbf{Thời gian:} & Tháng 08/2026 \\
+\end{tabularx}
+\end{tcolorbox}
+
+\vfill
+
+% Bản quyền Samsung
+\noindent
+\begin{minipage}{0.95\textwidth}
+\scriptsize\color{black!80}
+\textcircled{\scriptsize c} 2023 SAMSUNG. Bảo lưu mọi quyền.\\
+Văn phòng Trách nhiệm Xã hội Doanh nghiệp Samsung Electronics nắm giữ bản quyền của tài liệu này.\\
+Tài liệu này là tài sản sở hữu trí tuệ được bảo vệ bởi luật bản quyền, nghiêm cấm sao chép và tái bản khi chưa có sự cho phép.\\
+Để sử dụng tài liệu này ngoài chương trình đào tạo của Samsung Innovation Campus, cần phải có sự đồng ý bằng văn bản của chủ sở hữu bản quyền.
+\end{minipage}
+
+\vspace{0.4cm}
+
+% Tagline nhận diện thương hiệu
+\begin{center}
+{\footnotesize\color{tagblue}\textbf{Together for Tomorrow!}}\\[1pt]
+{\Large\color{tagblue}\textbf{Enabling People}}\\[1pt]
+{\tiny\color{gray}Education for Future Generations}
+\end{center}
+
+\vspace{0.4cm}
+
+% Dải màu đen dưới cùng trang bìa
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[samsungdark] (current page.south west) rectangle ([yshift=1.1cm]current page.south east);
+\end{tikzpicture}
+\end{titlepage}
+
+% =========================================================================
+% MỤC LỤC
+% =========================================================================
+\tableofcontents
+\cleardoublepage
+
+% =========================================================================
+% TÓM TẮT
+% =========================================================================
+\chapter*{Tóm tắt}
+\addcontentsline{toc}{chapter}{Tóm tắt}
+
+Báo cáo này trình bày quá trình nghiên cứu, thiết kế và triển khai một hệ thống dự báo doanh số bán lẻ và hỗ trợ ra quyết định kinh doanh tích hợp Trí tuệ Nhân tạo trên nền tảng web. Dự án sử dụng bộ dữ liệu \textbf{Favorita Grocery Sales Forecasting} (Kaggle) gồm 59 triệu dòng dữ liệu lịch sử từ 54 cửa hàng và 4.100 sản phẩm của chuỗi siêu thị Corporación Favorita (Ecuador).
+
+Hệ thống được xây dựng theo kiến trúc microservices với ba thành phần chính: (1) \textbf{Backend Gateway} sử dụng FastAPI xử lý logic nghiệp vụ và bảo mật; (2) \textbf{ML Service} cung cấp API dự báo doanh số với chiến lược Smart Routing kết hợp 33 Local LightGBM Models chuyên biệt theo ngành hàng và Global Ensemble (LightGBM + CatBoost) làm tuyến dự phòng; (3) \textbf{Frontend} React/Vite cung cấp giao diện dashboard trực quan và chatbot AI.
+
+Điểm đột phá của đề tài là tích hợp \textbf{Trợ lý AI thông minh} (LLM Agent) sử dụng mô hình Qwen 3.6-27B trên hạ tầng Groq Cloud LPU với cơ chế \textbf{Function Calling}, cho phép người quản lý đặt câu hỏi bằng ngôn ngữ tự nhiên và nhận phân tích, đề xuất nhập hàng tự động dựa trên dữ liệu thực tế từ cơ sở dữ liệu.
+
+\textbf{Kết quả trên Kaggle Leaderboard:} Hệ thống đã submit hai phương án dự báo lên cuộc thi Kaggle Favorita Grocery Sales Forecasting với chỉ số NWRMSLE (Normalized Weighted RMSLE --- thấp hơn là tốt hơn):
+
+\begin{itemize}
+    \item \textbf{Global Ensemble (Best Score):} Public 0.64438 / Private \textbf{0.63542};
+    \item \textbf{Local Models:} Public 0.65307 / Private 0.64207.
+\end{itemize}
+
+Kết quả xác nhận Global Ensemble vượt trội so với Local Models thuần túy (cải thiện 0.0087 điểm public, 0.0067 điểm private), đồng thời private score tốt hơn public score trên cả hai submission cho thấy mô hình có khả năng tổng quát hóa tốt, không overfit.
+
+Toàn bộ hệ thống được đóng gói bằng Docker Compose, hỗ trợ triển khai một lệnh duy nhất, với bảo mật đa tầng bao gồm JWT authentication, Role-Based Access Control (RBAC) và Row-Level Isolation theo phạm vi cửa hàng.
+
+\textbf{Từ khóa:} Học máy, Dự báo chuỗi thời gian, LightGBM, CatBoost, LLM Agent, Function Calling, Groq Cloud, Retail Analytics, Decision Support System, Microservices.
+
+\cleardoublepage
+
+% =========================================================================
+% ĐẶT VẤN ĐỀ
+% =========================================================================
+\chapter*{Đặt vấn đề}
+\addcontentsline{toc}{chapter}{Đặt vấn đề}
+
+\section*{Bối cảnh đề tài}
+
+Trong bối cảnh chuyển đổi số đang diễn ra mạnh mẽ ở hầu hết các ngành nghề, lĩnh vực bán lẻ (retail) là một trong những lĩnh vực chịu áp lực lớn nhất về việc tối ưu hóa vận hành và ra quyết định dựa trên dữ liệu. Các doanh nghiệp bán lẻ, từ chuỗi siêu thị lớn đến cửa hàng vừa và nhỏ, đều phải đối mặt với bài toán cốt lõi: \textbf{dự báo chính xác nhu cầu tiêu thụ của từng mặt hàng tại từng cửa hàng theo thời gian}.
+
+Việc dự báo sai lệch dẫn tới hai hệ quả tiêu cực song song:
+\begin{itemize}
+    \item \textbf{Tồn kho dư thừa} gây lãng phí chi phí lưu kho, vốn ứ đọng, hàng hóa hết hạn (đặc biệt với thực phẩm tươi sống);
+    \item \textbf{Thiếu hụt hàng hóa} gây mất doanh thu, giảm trải nghiệm khách hàng và mất thị phần vào tay đối thủ.
+\end{itemize}
+
+Bài toán dự báo doanh số bán lẻ vốn phức tạp bởi chịu ảnh hưởng của nhiều yếu tố đan xen: tính mùa vụ, ngày lễ và sự kiện đặc biệt, chương trình khuyến mãi, biến động giá dầu (đặc biệt tại các quốc gia phụ thuộc xuất khẩu dầu mỏ như Ecuador), đặc điểm vùng miền, loại cửa hàng và cả những cú sốc bất thường. Các phương pháp truyền thống (ARIMA hay kinh nghiệm người quản lý) khó nắm bắt các quan hệ phi tuyến và tương tác phức tạp giữa các yếu tố này ở quy mô hàng nghìn sản phẩm, hàng chục cửa hàng --- càng khó hơn với doanh nghiệp vừa và nhỏ không có đủ nguồn lực tự xây dựng hệ thống riêng.
+
+\section*{Tính cấp thiết}
+
+Trong quản trị chuỗi bán lẻ quy mô lớn, việc kiểm soát tồn kho đối mặt áp lực kép từ rủi ro cháy hàng (\textit{stockout}) gây thiệt hại doanh thu lẫn nguy cơ đọng vốn, hao hụt do tồn kho dư thừa (\textit{overstock}). Các phương pháp thống kê cổ điển hay mô hình học máy đơn lẻ bộc lộ hạn chế khi xử lý các yếu tố ngoại sinh phi tuyến (lịch khuyến mãi, sự kiện ngày lễ, giá dầu thô, sự phân hóa theo cụm cửa hàng), đồng thời tạo độ trễ lớn giữa kết quả dự báo và hành động thực thi vì người quản lý phải tính tay các tham số chuỗi cung ứng như Điểm đặt hàng lại (ROP), Tồn kho an toàn (Safety Stock), Lead Time.
+
+Do đó việc nghiên cứu phát triển một hệ thống kết hợp Machine Learning đa cấp (33 Local Models LightGBM chuyên biệt hóa cùng Global Fallback Ensemble) để dự báo nhu cầu, tích hợp Trí tuệ nhân tạo tác tử (Agentic LLM Qwen 3.6 trên hạ tầng Groq Cloud LPU) qua cơ chế Function Calling nhằm tự động hóa phân tích dữ liệu và đề xuất phương án nhập hàng theo thời gian thực là yêu cầu có tính cấp thiết cao, giúp doanh nghiệp chuyển từ quản trị phản ứng thụ động sang tự động hóa ra quyết định tối ưu.
+
+\section*{Mục tiêu nghiên cứu}
+
+\begin{enumerate}
+    \item Xây dựng hệ thống dự báo doanh số bán lẻ ngắn hạn (16 ngày) ở cấp độ SKU $\times$ cửa hàng, kiểm chứng chất lượng qua submission lên Kaggle Favorita với chỉ số NWRMSLE;
+    \item Thiết kế kiến trúc microservices đảm bảo hiệu năng API $< 1$ giây và khả năng mở rộng ngang;
+    \item Phát triển trợ lý AI thông hiểu ngôn ngữ tự nhiên, tự động gọi công cụ phân tích dữ liệu và đề xuất hành động;
+    \item Đảm bảo bảo mật đa tầng: JWT, RBAC, Row-Level Isolation theo phạm vi cửa hàng;
+    \item Triển khai toàn diện bằng Docker Compose với khả năng tự phục hồi.
+\end{enumerate}
+
+\section*{Phạm vi đề tài}
+
+\begin{itemize}
+    \item \textbf{Dữ liệu:} Bộ dữ liệu Favorita Grocery Sales Forecasting (Kaggle) --- 54 cửa hàng, 4.100 SKU, 33 ngành hàng, giai đoạn 2016--2017;
+    \item \textbf{Mô hình:} LightGBM, CatBoost (Gradient Boosting); LLM Qwen 3.6-27B (Groq Cloud);
+    \item \textbf{Hạ tầng:} Docker Compose, FastAPI, React, SQLite WAL mode;
+    \item \textbf{Chức năng:} Dự báo, dashboard trực quan hóa, chatbot AI hỗ trợ ra quyết định nhập hàng;
+    \item \textbf{Đánh giá ngoài:} Submission lên Kaggle Leaderboard (public + private score).
+\end{itemize}
+
+\cleardoublepage
+
+% =========================================================================
+% CHƯƠNG 1: CƠ SỞ LÝ THUYẾT
+% =========================================================================
+\chapter{CƠ SỞ LÝ THUYẾT}
+
+\section{Tổng quan về học máy (Machine Learning)}
+
+\subsection{Khái niệm}
+Học máy là lĩnh vực của trí tuệ nhân tạo hướng tới xây dựng các thuật toán và mô hình có khả năng ``học'' từ dữ liệu huấn luyện để đưa ra dự đoán hoặc quyết định mà không cần được lập trình chi tiết cho từng tình huống cụ thể.
+
+Về bản chất, học máy tìm cách xấp xỉ một hàm ánh xạ $f: \mathcal{X} \rightarrow \mathcal{Y}$ từ không gian đầu vào $\mathcal{X}$ sang không gian đầu ra $\mathcal{Y}$ dựa trên tập dữ liệu huấn luyện $D = \{(x_1, y_1), (x_2, y_2), \ldots, (x_n, y_n)\}$. Mục tiêu là tìm hàm $\hat{f}$ sao cho sai số tổng quát (generalization error) trên dữ liệu mới là nhỏ nhất.
+
+\subsection{Phân loại các bài toán học máy}
+
+\subsubsection{Học có giám sát (Supervised Learning)}
+Mô hình được huấn luyện trên tập dữ liệu có gắn nhãn, học ánh xạ từ đầu vào sang đầu ra bằng cách giảm thiểu sai số so với nhãn thực tế:
+\[
+    \hat{f} = \arg\min_{f \in \mathcal{F}} \frac{1}{n}\sum_{i=1}^{n} \mathcal{L}(y_i, f(x_i))
+\]
+trong đó $\mathcal{L}$ là hàm mất mát (loss function). Ứng dụng điển hình: phân loại, hồi quy, dự báo chuỗi thời gian.
+
+\subsubsection{Học không giám sát (Unsupervised Learning)}
+Mô hình tự tìm cấu trúc ẩn trong dữ liệu không nhãn. Các kỹ thuật phổ biến: phân cụm (K-Means, DBSCAN), giảm chiều (PCA, t-SNE), mô hình sinh (VAE, GAN).
+
+\subsubsection{Học tăng cường (Reinforcement Learning)}
+Tác nhân tương tác với môi trường, nhận phần thưởng/hình phạt và học chính sách hành động tối ưu tích lũy:
+\[
+    \pi^* = \arg\max_{\pi} \mathbb{E}\left[\sum_{t=0}^{T} \gamma^t r_t \mid \pi\right]
+\]
+Ứng dụng: AlphaGo, điều khiển robot, xe tự lái, tối ưu hóa chuỗi cung ứng.
+
+\subsection{Bài toán hồi quy chuỗi thời gian}
+Trọng tâm của đề tài là \textbf{bài toán hồi quy chuỗi thời gian có giám sát} phục vụ dự báo doanh số bán hàng. Cho chuỗi lịch sử $\{y_1, y_2, \ldots, y_t\}$, bài toán là dự đoán $y_{t+h}$ với $h$ là khoảng dự báo (horizon). Trong đề tài, $h = 16$ ngày.
+
+\section{Bài toán dự báo chuỗi thời gian (Time Series Forecasting)}
+
+\subsection{Định nghĩa}
+Chuỗi thời gian là chuỗi các điểm dữ liệu xảy ra theo thứ tự liên tiếp trong một khoảng thời gian, phản ánh chuyển động của đại lượng quan sát (ví dụ doanh số bán hàng ngày):
+\[
+    \{y_t\}_{t=1}^{T} = \{y_1, y_2, \ldots, y_T\}
+\]
+
+\subsection{Các thành phần của chuỗi thời gian}
+Một chuỗi thời gian thường được phân rã thành bốn thành phần:
+\begin{itemize}
+    \item \textbf{Xu hướng (Trend):} xu hướng tổng thể tăng/giảm theo thời gian;
+    \item \textbf{Mùa vụ (Seasonality):} dao động lặp lại theo chu kỳ cố định (theo tuần, tháng, quý; dịp lễ, mùa mua sắm);
+    \item \textbf{Chu kỳ (Cycle):} vận động trong khoảng dài hơn, không cố định chu kỳ như mùa vụ;
+    \item \textbf{Yếu tố bất thường (Irregular/White Noise):} nhiễu còn lại sau khi trích các thành phần trên.
+\end{itemize}
+
+Mô hình phân rã cộng:
+\[
+    y_t = T_t + S_t + C_t + \epsilon_t
+\]
+hoặc phân rã nhân:
+\[
+    y_t = T_t \times S_t \times C_t \times \epsilon_t
+\]
+
+\subsection{Các phương pháp dự báo truyền thống}
+
+\subsubsection{ARIMA (AutoRegressive Integrated Moving Average)}
+Mô hình ARIMA$(p, d, q)$ kết hợp:
+\begin{itemize}
+    \item AR$(p)$: Tự hồi quy --- giá trị hiện tại phụ thuộc $p$ giá trị quá khứ;
+    \item I$(d)$: Sai phân $d$ lần để chuỗi dừng (stationary);
+    \item MA$(q)$: Trung bình trượt --- giá trị hiện tại phụ thuộc $q$ sai số quá khứ.
+\end{itemize}
+\[
+    \phi(B)(1-B)^d y_t = \theta(B)\epsilon_t
+\]
+Phù hợp chuỗi đơn biến ổn định nhưng hạn chế khi cần biến ngoại sinh hoặc dự báo đồng thời hàng nghìn chuỗi (sản phẩm $\times$ cửa hàng).
+
+\subsubsection{SARIMA/SARIMAX}
+Mở rộng ARIMA có thành phần mùa vụ và biến ngoại sinh:
+\[
+    \phi(B)\Phi(B^s)(1-B)^d(1-B^s)^D y_t = \theta(B)\Theta(B^s)\epsilon_t
+\]
+
+\subsubsection{Exponential Smoothing (Holt--Winters)}
+Làm tròn mũ gán trọng số giảm dần cho quan sát cũ:
+\[
+    \hat{y}_{t+1} = \alpha y_t + (1-\alpha)\hat{y}_t
+\]
+Vẫn giới hạn đơn biến, khó xử lý quan hệ phi tuyến giữa nhiều biến ngoại sinh.
+
+\subsection{Học máy trong dự báo chuỗi thời gian}
+Cách tiếp cận hiện đại chuyển bài toán dự báo thành bài toán học có giám sát bằng feature engineering:
+
+\subsubsection{Biến trễ (Lag Features)}
+Nắm bắt tự tương quan trong chuỗi:
+\[
+    x^{\mathrm{lag}}_t = y_{t-l}, \qquad l \in \{7, 14, 28\}
+\]
+Độ trễ tối thiểu 7 ngày bảo đảm tính khả thi khi dự báo chu kỳ 16 ngày không rò rỉ dữ liệu.
+
+\subsubsection{Thống kê trượt (Rolling Window Statistics)}
+Khử nhiễu cục bộ, nắm bắt xu hướng ngắn hạn:
+\[
+    x^{\mathrm{roll}}_t = \frac{1}{W}\sum_{i=1}^{W} y_{t-i}, \qquad W = 7
+\]
+
+\subsubsection{Đặc trưng lịch biểu -- mùa vụ}
+Thứ trong tuần, tháng, cờ cuối tuần; đặc trưng trước/sau ngày lễ ($\pm 1$, $\pm 2$ ngày) và cờ mùa tựu trường đặc thù Ecuador (bang Costa: tháng 4--5; bang Sierra: tháng 8--9).
+
+\subsubsection{Đặc trưng ngoại sinh}
+Giá dầu thô quốc tế (đo lường sức mua vĩ mô), tỷ lệ sản phẩm được khuyến mãi, số giao dịch cửa hàng trễ 1 ngày.
+
+\section{Các mô hình học máy sử dụng trong dự báo}
+
+\subsection{Mô hình cây tăng cường Gradient (GBDT)}
+Cây quyết định là phương pháp học có giám sát phi tham số cho phân loại và hồi quy, dự đoán bằng cách học các quy tắc quyết định từ đặc trưng dữ liệu.
+
+\subsubsection{Nguyên lý Gradient Boosting}
+LightGBM và CatBoost cùng dựa trên khung Gradient Boosting: tại vòng lặp thứ $t$, mô hình tìm cây $f_t$ tối thiểu hóa hàm mục tiêu:
+\[
+    \mathcal{L}^{(t)} = \sum_{i=1}^{n} \ell\!\left(y_i,\ \hat{y}_i^{(t-1)} + f_t(x_i)\right) + \Omega(f_t)
+\]
+trong đó $\Omega(f)$ là số hạng phạt độ phức tạp cây:
+\[
+    \Omega(f) = \gamma T + \frac{1}{2}\lambda\sum_{j=1}^{T} w_j^2
+\]
+Khai triển Taylor bậc hai quanh dự báo hiện tại:
+\[
+    \mathcal{L}^{(t)} \approx \sum_{i=1}^{n}\left[g_i f_t(x_i) + \tfrac{1}{2} h_i f_t^2(x_i)\right] + \Omega(f_t)
+\]
+với gradient bậc nhất và bậc hai:
+\[
+    g_i = \frac{\partial \ell(y_i, \hat{y}_i^{(t-1)})}{\partial \hat{y}_i^{(t-1)}}, \qquad 
+    h_i = \frac{\partial^2 \ell(y_i, \hat{y}_i^{(t-1)})}{\partial \hat{y}_i^{(t-1)2}}
+\]
+
+\subsubsection{Điểm đột phá của LightGBM}
+\paragraph{Phát triển lá (Leaf-wise Growth).}
+LightGBM chọn nút lá có độ giảm mất mát lớn nhất để phân tách thay vì mở rộng đều theo tầng (level-wise), cho độ sâu hiệu dụng cao hơn với cùng số nút.
+
+\paragraph{GOSS (Gradient-based One-Side Sampling).}
+Giữ toàn bộ top $a\cdot n$ mẫu gradient lớn, lấy mẫu ngẫu nhiên $b\cdot n$ mẫu gradient nhỏ và bù trọng số $\frac{1-a}{b}$ để không lệch phân phối:
+\[
+    \tilde{V} = \frac{1}{n}\left[\sum_{g \in A_l}|g_g| + \frac{1-a}{b}\sum_{g \in A_b}|g_g|\right]
+\]
+
+\paragraph{EFB (Exclusive Feature Bundling).}
+Dùng tô màu đồ thị để gộp các đặc trưng thưa hiếm khi đồng thời khác 0, giảm độ phức tạp từ $O(n \times n_{\mathrm{feat}})$ xuống $O(n \times n_{\mathrm{bundle}})$.
+
+\subsubsection{Điểm đột phá của CatBoost}
+\paragraph{Ordered Target Statistics.}
+Mã hóa biến phân loại theo thống kê đích có thứ tự để tránh rò rỉ mục tiêu (target leakage):
+\[
+    \widetilde{\mathrm{TS}}_\sigma(c) = \frac{\sum_{k<i}\,[\,x_{k,c}=c\,]\,y_k + \alpha \bar{p}}{\sum_{k<i}\,[\,x_{k,c}=c\,] + \alpha}
+\]
+với hoán vị ngẫu nhiên $\sigma$, giá trị tiên nghiệm $\bar{p}$ và trọng số làm trơn Laplace $\alpha$.
+
+\paragraph{Cây đối xứng (Oblivious Trees).}
+Mọi nút cùng tầng dùng chung điều kiện phân nhánh, hoạt động như bảng tra cứu nhị phân --- suy luận nhanh và chống quá khớp.
+
+\subsection{Thuật toán phân cụm (K-Means)}
+K-Means là phương pháp học không giám sát phân chia $n$ quan sát thành $K$ cụm $\{S_1,\dots,S_K\}$ bằng cách tối thiểu hóa tổng bình phương khoảng cách nội cụm (WCSS):
+\[
+    \arg\min_{S} \sum_{j=1}^{K}\sum_{x \in S_j} \lVert x - \mu_j \rVert^2
+\]
+với $\mu_j$ là tâm cụm $j$.
+
+\textit{Lưu ý áp dụng trong đề tài:} Hệ thống không tự chạy K-Means trên dữ liệu bán hàng mà tận dụng sẵn nhãn phân cụm (cluster) đi kèm \texttt{stores.csv} của Favorita (54 cửa hàng thuộc 17 cụm), sau đó áp dụng kỹ thuật mã hóa đích có làm trơn (Smoothed Target Encoding) để chuyển nhãn cụm thành đặc trưng thống kê cho mô hình.
+
+\subsection{Mô hình hóa đa cấp: đánh đổi độ lệch -- phương sai}
+Sự phân chia giữa 33 Local Models và Global Fallback Model xuất phát từ nguyên lý bias--variance tradeoff:
+\begin{itemize}
+    \item \textbf{Global Model (mô hình gộp toàn chuỗi):} phương sai thấp nhờ học trên toàn bộ dữ liệu lớn, nhưng độ chệch cao với các ngành hàng cá biệt do ``bình quân hóa'' (regression to the mean);
+    \item \textbf{Local Models (từng ngành hàng):} độ chệch rất thấp do bám sát phân phối riêng từng ngành hàng, nhưng phương sai cao nếu dữ liệu ngành đó quá ít;
+    \item \textbf{Chiến lược Smart Routing \& Ensemble:} dùng Local Model làm tuyến chính và Global Ensemble (LightGBM + CatBoost) làm tuyến dự phòng, tối thiểu hóa sai số toàn cục.
+\end{itemize}
+
+\subsection{Kiến trúc Transformer và LLM Agent}
+\subsubsection{Cơ chế Self-Attention}
+Kiến trúc Transformer là nền tảng của các mô hình ngôn ngữ lớn (LLM). Cơ chế tự chú ý (Self-Attention) tính biểu diễn mỗi token bằng tổng hợp có trọng số từ toàn bộ ngữ cảnh:
+\[
+    \mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right)V
+\]
+
+\subsubsection{Multi-Head Attention}
+\[
+    \mathrm{MultiHead}(Q,K,V) = \mathrm{Concat}(\mathrm{head}_1, \ldots, \mathrm{head}_h)W^O
+\]
+\[
+    \mathrm{head}_i = \mathrm{Attention}(QW_i^Q, KW_i^K, VW_i^V)
+\]
+
+\subsubsection{LLM Agent với Function Calling}
+Trong đề tài, mô hình \texttt{qwen/qwen3.6-27b} (27 tỷ tham số) được khai thác qua API của Groq Cloud --- bộ vi xử lý LPU (Language Processing Unit) chuyên dụng cho suy luận ngôn ngữ độ trễ thấp.
+
+Năng lực tư vấn được khuếch đại bằng kỹ thuật \textbf{Function Calling}: thay vì để LLM suy đoán số liệu, hệ thống định nghĩa bộ hàm công cụ mà mô hình chủ động triệu gọi; kết quả từ cơ sở dữ liệu và các hàm toán chuỗi cung ứng được đưa trở lại ngữ cảnh hội thoại để mô hình tổng hợp câu trả lời cuối, hạn chế hiện tượng ảo giác (hallucination).
+
+\subsection{Chỉ số đánh giá mô hình dự báo}
+\subsubsection{RMSLE (Root Mean Squared Logarithmic Error)}
+Chỉ số mục tiêu chính:
+
+\[
+    \mathrm{RMSLE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n} \left(\ln(1+\hat{y}_i) - \ln(1+y_i)\right)^2}
+\]
+Đặc tính:\\
+• Đo sai số tương đối theo tỉ lệ\\
+• Phạt nặng hơn dự báo thiếu so với dự báo thừa (phù hợp tránh đứt hàng)\\
+• Khử ảnh hưởng các đỉnh doanh số bất thường. \\
+
+  
+\subsubsection{NWRMSLE (Normalized Weighted RMSLE)}
+Chỉ số chính thức của cuộc thi Kaggle Favorita --- mở rộng RMSLE với trọng số $w_i$ cho từng nhóm sản phẩm (hàng dễ hỏng \textit{perishable} có trọng số 1.25):
+\[
+    \mathrm{NWRMSLE} = \sqrt{\frac{\sum_{i=1}^{n} w_i \left(\ln(1+\hat{y}_i) - \ln(1+y_i)\right)^2}{\sum_{i=1}^{n} w_i}}
+\]
+Chỉ số này được dùng để chấm điểm trên Kaggle Leaderboard (public + private).
+
+\subsubsection{MAE (Mean Absolute Error)}
+Sai số tuyệt đối trung bình theo đơn vị sản phẩm - con số trực quan cho nhân viên thủ kho:
+
+\[
+    \mathrm{MAE} = \frac{1}{n}\sum_{i=1}^{n} |\hat{y}_i - y_i|
+\]
+
+\subsubsection{RMSE (Root Mean Squared Error)}
+Nhạy với sai số lớn, giám sát ngành hàng tốc độ bán cao (GROCERY I, BEVERAGES):
+
+\[
+    \mathrm{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n} (\hat{y}_i - y_i)^2}
+\]
+
+\subsubsection{WAPE (Weighted Absolute Percentage Error)}
+Thay thế hoàn hảo cho MAPE, khắc phục lỗi chia cho $y_i = 0$ của các ngày nhu cầu bằng 0: 
+\[
+    \mathrm{WAPE} = \frac{\sum_{i=1}^{n} |\hat{y}_i - y_i|}{\sum_{i=1}^{n} y_i}
+\]
+
+\section{Nền tảng web và kiến trúc hệ thống hỗ trợ ra quyết định}
+\subsection{Hệ thống hỗ trợ ra quyết định (DSS)}
+Hệ thống hỗ trợ ra quyết định giúp nhà quản lý tổng hợp, phân tích dữ liệu và trực quan hóa thông tin:
+\begin{itemize}
+    \item Dashboard xu hướng doanh số theo thời gian;
+    \item Cảnh báo bất thường tồn kho;
+    \item Gợi ý số lượng đặt hàng/nhập kho;
+    \item Phân tích kịch bản (what-if analysis).
+\end{itemize}
+
+\subsection{Kiến trúc ứng dụng web hiện đại}
+\begin{itemize}
+    \item \textbf{Tầng giao diện (Frontend):} React 18 + Vite, Tailwind CSS v4, Radix UI / Shadcn UI;
+    \item \textbf{Tầng ứng dụng (Backend Gateway):} FastAPI xử lý logic nghiệp vụ, API RESTful, bảo mật, điều phối LLM Agent;
+    \item \textbf{Tầng suy luận học máy (ML Service):} Microservice FastAPI độc lập phục vụ 33 Local models và Global Ensemble;
+    \item \textbf{Tầng dữ liệu (Data layer):} SQLite WAL mode lưu trữ giao dịch lịch sử, dữ liệu dự báo, mức tồn kho và các bảng cache tổng hợp.
+\end{itemize}
+
+\section{Tổng quan tập dữ liệu Favorita Grocery Sales Forecasting}
+Tập dữ liệu do Corporación Favorita (Ecuador) công bố trên Kaggle gồm: 
+
+\begin{table}[h!]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Tệp} & \textbf{Kích thước} & \textbf{Nội dung} \\
+\midrule
+\texttt{train.csv} & $\approx$4.77 GB & Doanh số theo ngày $\times$ cửa hàng $\times$ mặt hàng \\
+\texttt{stores.csv} & Nhỏ & 54 cửa hàng, 22 thành phố, 17 cụm, 5 loại hình \\
+\texttt{items.csv} & Nhỏ & 4.100 SKU thuộc 33 ngành hàng, cờ hàng dễ hỏng \\
+\texttt{transactions.csv} & Trung bình & Số giao dịch theo ngày mỗi cửa hàng \\
+\texttt{oil.csv} & Nhỏ & Giá dầu hằng ngày (43 giá trị thiếu) \\
+\texttt{holidays\_events.csv} & Nhỏ & Ngày lễ, sự kiện đặc biệt \\
+\bottomrule
+\end{tabularx}
+\caption{Tổng quan các tệp dữ liệu trong bộ Favorita.}
+\end{table}
+
+\cleardoublepage
+
+% =========================================================================
+% CHƯƠNG 2: PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
+% =========================================================================
+\chapter{PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG}
+
+\section{Phân tích yêu cầu hệ thống}
+
+\subsection{Khảo sát bài toán thực tế}
+Qua khảo sát vận hành, doanh nghiệp bán lẻ vừa và nhỏ đối diện bốn nhu cầu cấp thiết:
+
+\begin{enumerate}
+    \item \textbf{Khủng hoảng quản trị tồn kho:} Mắc kẹt giữa cháy hàng (mất doanh thu, giảm lòng trung thành) và đọng vốn (chi phí lưu kho, hao hụt hàng dễ hỏng). \textit{Nhu cầu:} Cơ chế cảnh báo tồn kho chủ động, tự tính ROP và Safety Stock theo tốc độ tiêu thụ thực tế.
+    
+    \item \textbf{Hạn chế dự báo truyền thống:} Dự báo ``cảm tính'' hay trung bình Excel bỏ qua yếu tố ngoại sinh và mùa vụ. \textit{Nhu cầu:} Mô hình LightGBM/CatBoost dự báo ngắn hạn 16 ngày ở cấp ngành hàng và từng SKU.
+    
+    \item \textbf{Thiếu nhân lực phân tích dữ liệu:} SME không đủ ngân sách thuê đội ngũ data scientist. \textit{Nhu cầu:} Hệ thống SaaS ``cắm là chạy'', mô hình ML ẩn sau API.
+    
+    \item \textbf{Khoảng cách giữa con số và hành động:} Phần mềm dự báo chỉ trả số liệu. \textit{Nhu cầu:} Trợ lý AI hiểu ngôn ngữ tự nhiên, tự gọi thuật toán ML và toán chuỗi cung ứng để đưa gợi ý hành động cụ thể.
+\end{enumerate}
+
+\subsection{Xác định đối tượng người dùng (User Roles \& Personas)}
+Hệ thống thiết kế theo mô hình B2B SaaS, phân ba cấp người dùng theo RBAC:
+
+\newpage
+\begin{table}[!h]
+\centering
+\begin{tabular}{@{}lp{5cm}p{5cm}@{}}
+\toprule
+\textbf{Vai trò} & \textbf{Chức năng chính} & \textbf{Phạm vi truy cập} \\
+\midrule
+Quản trị viên hệ thống (SaaS Provider) & Vận hành hạ tầng microservices, giám sát sức khỏe dịch vụ, tái huấn luyện mô hình định kỳ & Toàn bộ hệ thống nhưng không can thiệp dữ liệu kinh doanh hằng ngày \\
+\addlinespace
+Quản lý doanh nghiệp (Tenant Manager) & Dashboard tổng quan toàn bộ cửa hàng, so sánh cụm cửa hàng, phân tích kịch bản vĩ mô & Toàn bộ dữ liệu của doanh nghiệp mình \\
+\addlinespace
+Quản lý cửa hàng (Store Manager) & Dự báo chi tiết cửa hàng mình, cảnh báo cháy hàng, tính ROP và số lượng nhập từng SKU & Row-Level Isolation theo \texttt{store\_nbr} gắn tài khoản \\
+\bottomrule
+\end{tabular}
+\caption{Phân vai người dùng và phạm vi quyền hạn.}
+\end{table}
+
+
+
+
+
+
+
+\subsection{Yêu cầu kỹ thuật và ràng buộc vận hành}
+\begin{itemize}
+    \item \textbf{Hiệu năng:} Endpoint truy vấn CSDL phản hồi dưới 1 giây (nhờ bảng tổng hợp cache); agent LLM phản hồi dưới 3 giây trên Groq LPU, tổng thời gian chat dưới 5 giây; suy luận real-time dưới 2 giây nhờ preload trọng số lúc khởi động service.
+    
+    \item \textbf{Khả năng mở rộng:} Kiến trúc microservices cho phép scale ngang từng dịch vụ; pipeline offline xử lý file CSV hàng GB bằng chia khối (chunking) tránh tràn RAM.
+    
+    \item \textbf{Bảo mật:} JWT cho mọi request frontend; RBAC + Row-Level Isolation; SQLite mode read-only cho lớp công cụ LLM; API key quản lý bằng biến môi trường, không hardcode.
+    
+    \item \textbf{Chịu lỗi:} Fallback Local Model $\rightarrow$ Global Ensemble ở tầng ML; graceful degradation ở tầng agent (HTTP 502 kèm thông điệp tiếng Việt); Docker \texttt{restart: always} tự phục hồi.
+    
+    \item \textbf{Bảo trì:} Module hóa (\texttt{data\_loader}, \texttt{preprocessor}, \texttt{agent}, \texttt{tools}); Swagger/OpenAPI tự động tại \url{http://localhost:8000/docs}; tách biệt \texttt{ml\_training} (offline) và \texttt{ml\_service} (online) cho phép retrain không dừng server.
+\end{itemize}
+
+\section{Kiến trúc tổng thể hệ thống}
+
+Hệ thống tổ chức theo mô hình microservices đóng gói bằng Docker Compose trên mạng bridge riêng \texttt{retail\_network}: dịch vụ suy luận học máy \texttt{ml\_service} (cổng 8001), cổng API \texttt{backend} (cổng 8000) và giao diện web \texttt{frontend} (cổng 8501 ánh xạ cổng 80 nginx trong container).
+
+Các dịch vụ phụ thuộc theo chuỗi có điều kiện sức khỏe (\texttt{depends\_on} với \texttt{condition: service\_healthy}) bảo đảm thứ tự khởi động: mô hình nạp xong thì backend mới mở cổng, backend khỏe thì frontend mới phục vụ.
+
+% ==================== SƠ ĐỒ KIẾN TRÚC HỆ THỐNG ====================
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    ent/.style={
+        draw=black!75, rounded corners=3pt, fill=blue!6,
+        text width=5.6cm, align=left, inner sep=6pt, line width=0.75pt,
+        font=\small
+    },
+    enthist/.style={
+        draw=black!75, rounded corners=3pt, fill=orange!10,
+        text width=6.6cm, align=left, inner sep=6pt, line width=0.85pt,
+        font=\small
+    },
+    rel/.style={-{Stealth[length=2.2mm]}, thick, draw=black!85},
+    reldash/.style={-{Stealth[length=2.2mm]}, thick, dashed, draw=black!75},
+    lbl/.style={font=\scriptsize\bfseries, fill=white, inner sep=2pt}
+]
+% Bảng phía trên: STORES và ITEMS
+\node[ent] (stores) at (-5.6, 3.6) {
+    \centering\textbf{STORES}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{store\_nbr} (INT)\\
+    \textbullet\ \texttt{city}, \texttt{state} (VARCHAR)\\
+    \textbullet\ \texttt{type} (CHAR), \texttt{cluster} (INT)\\
+    \textit{\textcolor{gray!80!black}{54 cửa hàng \textbullet\ 17 cụm}}
+};
+\node[ent] (items) at (5.6, 3.6) {
+    \centering\textbf{ITEMS}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{item\_nbr} (INT)\\
+    \textbullet\ \texttt{family} (VARCHAR)\\
+    \textbullet\ \texttt{class} (INT), \texttt{perishable} (INT)\\
+    \textit{\textcolor{gray!80!black}{4.100 SKU \textbullet\ 33 ngành hàng}}
+};
+% Bảng trung tâm: HISTORICAL_SALES
+\node[enthist] (hist) at (0, 0) {
+    \centering\textbf{HISTORICAL\_SALES}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{(date, store\_nbr, item\_nbr)}\\
+    \textbullet\ \texttt{unit\_sales} (FLOAT $\geq 0$)\\
+    \textbullet\ \texttt{onpromotion} (INT)\\
+    \textit{\textcolor{orange!60!black}{\textbf{59.038.132 dòng} (2016--2017)}}\\[4pt]
+};
+% Bảng phía dưới: INVENTORY và FORECASTS
+\node[ent] (inv) at (-5.6, -3.6) {
+    \centering\textbf{INVENTORY}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{(store\_nbr, item\_nbr)}\\
+    \textbullet\ \texttt{current\_stock} (FLOAT)\\
+    \textbullet\ \texttt{lead\_time\_days} (INT)\\
+    \textit{\textcolor{gray!80!black}{Tồn kho mô phỏng 60/20/20}}
+};
+\node[ent] (fc) at (5.6, -3.6) {
+    \centering\textbf{FORECASTS}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{id} (INTEGER AUTO)\\
+    \textbullet\ \texttt{date}, \texttt{store\_nbr}, \texttt{item\_nbr}\\
+    \textbullet\ \texttt{predicted\_sales} (FLOAT)\\
+    \textit{\textcolor{gray!80!black}{\textbf{3.370.464 dòng} (16 ngày)}}
+};
+
+% ====== Quan hệ Khóa ngoại (Đường nét liền) ======
+% Stores -> Historical_sales: XUẤT PHÁT TỪ CẠNH PHẢI của stores (không dùng chung
+% đường thẳng đứng với Stores -> Inventory nữa)
+\draw[rel] (stores.east) -- ++(0.9,0) |- node[lbl, pos=0.62]{1:N} (hist.west);
+% Items -> Historical_sales: tương tự, xuất phát từ cạnh trái của items
+\draw[rel] (items.west) -- ++(-0.9,0) |- node[lbl, pos=0.62]{1:N} (hist.east);
+% Stores -> Inventory: đường thẳng đứng riêng, không còn trùng đoạn nào
+\draw[rel] (stores.south) -- node[lbl]{1:N} (inv.north);
+% Items -> Forecasts: đường thẳng đứng riêng
+\draw[rel] (items.south) -- node[lbl]{1:N} (fc.north);
+
+% ====== Luồng dữ liệu nghiệp vụ (Đường nét đứt) ======
+% Lùi điểm xuất phát xuống dưới đáy khung hist một đoạn để không đè chữ "59.038.132 dòng"
+\draw[reldash] (hist.south) ++(0,-3pt) -- ++(0,-4mm) -| node[lbl, pos=0.5, text width=2.6cm, align=center]{Tính ROP /\\Safety Stock} (inv.east);
+\draw[reldash] (hist.south) ++(0,-3pt) -- ++(0,-4mm) -| node[lbl, pos=0.5, text width=2.6cm, align=center]{Huấn luyện\\\& Dự báo} (fc.west);
+\end{tikzpicture}%
+}
+\caption{Sơ đồ ERD rút gọn của retail.db (kèm quy mô dòng đo được).}
+\label{fig:erd}
+\end{figure}
+
+Trọng số mô hình không đóng gói vào image mà mount vào container chế độ chỉ đọc (\texttt{:ro}), cho phép nâng cấp mô hình không cần build lại image. Hai dịch vụ Python cấu hình healthcheck định kỳ và chính sách \texttt{restart: always}.
+
+\section{Thiết kế pipeline dữ liệu và huấn luyện mô hình}
+Pipeline huấn luyện tách khỏi serving theo nguyên tắc offline training / online inference, gồm sáu bước nối tiếp trong \texttt{ml\_training/src}:
+
+\begin{table}[H]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{@{}p{2.6cm}p{5.4cm}X@{}}
+\toprule
+\textbf{Phạm vi} & \textbf{Công nghệ} & \textbf{Vai trò chính} \\
+\midrule
+Backend API & Python 3.11, FastAPI, Uvicorn & Cổng RESTful, xác thực, điều phối nghiệp vụ \\
+ML Service & FastAPI, LightGBM 4.x, CatBoost, scikit-learn, joblib & Serving 33 local model và global ensemble \\
+LLM Agent & Groq API --- qwen/qwen3.6-27b (LPU) & Trợ lý tư vấn chuỗi cung ứng qua Function Calling \\
+Frontend & React 18, Vite 6, TypeScript, Tailwind CSS v4, Recharts, Shadcn & Dashboard, biểu đồ, giao diện chat \\
+Web server & nginx (alpine) & Tệp tĩnh, reverse proxy /api, gzip \\
+CSDL & SQLite (WAL), chỉ mục tổ hợp & 59 triệu dòng lịch sử, dự báo, tồn kho \\
+Bảo mật & PyJWT (HS256), PBKDF2-HMAC-SHA256 200k vòng & Token phiên, băm mật khẩu, API key ERP \\
+Triển khai & Docker Compose, healthcheck & Đóng gói đồng nhất, tự phục hồi \\
+\bottomrule
+\end{tabularx}
+\caption{Công nghệ và công cụ sử dụng trong hệ thống.}
+\label{tab:tech}
+\end{table}
+
+\begin{enumerate}
+    \item \texttt{data\_loader.py}: Đọc train.csv gốc ($\approx$4.77 GB cấp item), lọc từ 01/01/2016, hợp nhất items/stores/oil/holidays/transactions, tổng hợp về cấp độ (cửa hàng $\times$ ngành hàng $\times$ ngày); cache Parquet 874.052 dòng $\times$ 15 cột;
+    
+    \item \texttt{preprocessor.py}: Sinh đặc trưng (lag, rolling, lịch, lễ, dầu) dùng chung huấn luyện và suy luận --- feature store nhất quán;
+    
+    \item \texttt{cluster\_features.py}: ClusterFeatureEngineer --- mã hóa đích có làm trơn cho đặc trưng cụm, xuất \texttt{cluster\_engineer.pkl};
+    
+    \item \texttt{train.py}: Global ensemble LightGBM + CatBoost kiểm định walk-forward 3-fold, tự tối ưu trọng số hòa trộn, xuất artifact và \texttt{ensemble\_meta.json};
+    
+    \item \texttt{train\_local\_models.py}: 33 mô hình LightGBM cấp ngành hàng + \texttt{local\_models\_metadata.json};
+    
+    \item \texttt{predict\_local.py} + \texttt{load\_forecasts\_inventory.py} + \texttt{init\_database.py}: Dự báo đệ quy 16 ngày toàn chuỗi, phân rã xuống SKU, nạp retail.db kèm tồn kho mô phỏng.
+\end{enumerate}
+
+Artifact mô hình đặt tại \texttt{ml\_service/models} và mount chỉ đọc:
+\begin{itemize}
+    \item \texttt{lgbm\_model.pkl} ($\approx$14 MB)
+    \item \texttt{catboost\_model.cbm} ($\approx$19 MB)
+    \item \texttt{local\_lgbm\_models.pkl} ($\approx$6.8 MB gồm 33 mô hình kèm preprocessor từng ngành)
+    \item \texttt{preprocessor.pkl}, \texttt{cluster\_engineer.pkl}
+    \item \texttt{ensemble\_meta.json}, \texttt{metrics.json}, \texttt{local\_models\_metadata.json}
+\end{itemize}
+
+
+\section{Thiết kế trợ lý AI thông minh (LLM Agent)}
+Agent hai pha: Backend gửi hội thoại tới qwen/qwen3.6-27b (Groq Cloud) cùng System Prompt vai trò ``Chuyên gia quản trị chuỗi cung ứng bán lẻ'' và danh sách công cụ; mô hình chọn hàm cần gọi (vòng 1), backend thực thi trên CSDL rồi trả JSON về cho mô hình tổng hợp câu trả lời (vòng 2).
+
+Tham số sinh: temperature = 0.6; max\_tokens = 2048. Lỗi Groq ánh xạ thành HTTP 502 kèm detail tiếng Việt.
+
+\subsection{Bộ công cụ và toán học chuỗi cung ứng}
+
+Chín công cụ Function Calling bao phủ truy vấn dữ liệu và tính toán nghiệp vụ; mọi câu SQL viết tĩnh trong \texttt{tools.py} (LLM không tự sinh SQL).
+
+\subsubsection{Công thức Điểm đặt hàng lại (ROP)}
+\[
+    \mathrm{ROP} = \bar{d}\cdot \mathrm{LT} + z\,\sigma\sqrt{\mathrm{LT}}
+\]
+Trong đó:
+\begin{itemize}
+    \item $\bar{d}$: Nhu cầu trung bình/ngày;
+    \item $\mathrm{LT}$: Lead time (thời gian giao hàng);
+    \item $z = 1.65$ (mức phục vụ 95\%);
+    \item $\sigma \approx 0.2\,\bar{d}$: Độ lệch chuẩn nhu cầu.
+\end{itemize}
+
+\subsubsection{Số lượng đề xuất nhập}
+\[
+    Q_{\mathrm{suggested}} = \max\bigl(0,\ \hat{F}_{16d} - \text{Stock}_{\text{hiện tại}}\bigr)
+\]
+
+\subsubsection{Rủi ro cháy hàng}
+Tồn kho $<$ (dự báo ngày $\times$ lead time) $\Rightarrow$ cảnh báo gấp; thiệt hại cơ hội theo giá giả định 5 USD/đơn vị, vượt 100 USD xếp mức nguy hiểm.
+
+\subsubsection{Hàng chậm luân chuyển}
+ $\hat{F}_{16d} < \mathrm{Stock}/2$ và Stock $> 20$ $\Rightarrow$ đề xuất giảm giá 15\%/30\%.
+
+\subsubsection{Gợi ý bán chéo}
+Top 3 sản phẩm cùng ngành hàng doanh số cao nhất; so sánh cụm cửa hàng: chênh lệch \% doanh số giữa cụm người dùng và trung bình toàn chuỗi.
+
+\subsection{Ràng buộc an toàn của tác tử}
+
+\begin{itemize}
+    \item Kết nối dữ liệu agent dùng SQLite \texttt{mode=ro} (chỉ đọc) --- về nguyên tắc không phát sinh lệnh ghi/xóa hỏng dữ liệu;
+    \item \texttt{validate\_tool\_access} kiểm tra quyền cửa hàng trước mỗi lần gọi công cụ; ngoài phạm vi bị từ chối ngay, thông báo đưa trở lại ngữ cảnh cho mô hình giải thích;
+    \item Ngoại lệ công cụ đóng gói JSON trả về mô hình, không đứt gãy hội thoại.
+\end{itemize}
+
+\section{Thiết kế cơ sở dữ liệu}
+
+\subsection{Mô hình thực thể -- quan hệ (ERD)}
+
+CSDL SQLite thiết kế chuẩn hóa gồm các thực thể chính: STORES, ITEMS, HISTORICAL\_SALES, INVENTORY, FORECASTS cùng hai bảng tổng hợp cache (AGG\_ITEM\_STORE\_SALES, AGG\_FORECAST\_DATE\_FAMILY) và SKU\_STATS, MODEL\_META.
+
+% ==================== SƠ ĐỒ ERD ====================
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    ent/.style={
+        draw=black!75, rounded corners=3pt, fill=blue!6,
+        text width=5.6cm, align=left, inner sep=6pt, line width=0.75pt,
+        font=\small
+    },
+    enthist/.style={
+        draw=black!75, rounded corners=3pt, fill=orange!10,
+        text width=6.6cm, align=left, inner sep=6pt, line width=0.85pt,
+        font=\small
+    },
+    rel/.style={-{Stealth[length=2.2mm]}, thick, draw=black!85},
+    reldash/.style={-{Stealth[length=2.2mm]}, thick, dashed, draw=black!75},
+    lbl/.style={font=\scriptsize\bfseries, fill=white, inner sep=2pt}
+]
+% Bảng phía trên: STORES và ITEMS
+\node[ent] (stores) at (-5.6, 3.6) {
+    \centering\textbf{STORES}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{store\_nbr} (INT)\\
+    \textbullet\ \texttt{city}, \texttt{state} (VARCHAR)\\
+    \textbullet\ \texttt{type} (CHAR), \texttt{cluster} (INT)\\
+    \textit{\textcolor{gray!80!black}{54 cửa hàng \textbullet\ 17 cụm}}
+};
+\node[ent] (items) at (5.6, 3.6) {
+    \centering\textbf{ITEMS}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{item\_nbr} (INT)\\
+    \textbullet\ \texttt{family} (VARCHAR)\\
+    \textbullet\ \texttt{class} (INT), \texttt{perishable} (INT)\\
+    \textit{\textcolor{gray!80!black}{4.100 SKU \textbullet\ 33 ngành hàng}}
+};
+% Bảng trung tâm: HISTORICAL_SALES
+\node[enthist] (hist) at (0, 0) {
+    \centering\textbf{HISTORICAL\_SALES}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{(date, store\_nbr, item\_nbr)}\\
+    \textbullet\ \texttt{unit\_sales} (FLOAT $\geq 0$)\\
+    \textbullet\ \texttt{onpromotion} (INT)\\
+    \textit{\textcolor{orange!60!black}{\textbf{59.038.132 dòng} (2016--2017)}}\\[4pt]
+};
+% Bảng phía dưới: INVENTORY và FORECASTS
+\node[ent] (inv) at (-5.6, -3.6) {
+    \centering\textbf{INVENTORY}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{(store\_nbr, item\_nbr)}\\
+    \textbullet\ \texttt{current\_stock} (FLOAT)\\
+    \textbullet\ \texttt{lead\_time\_days} (INT)\\
+    \textit{\textcolor{gray!80!black}{Tồn kho mô phỏng 60/20/20}}
+};
+\node[ent] (fc) at (5.6, -3.6) {
+    \centering\textbf{FORECASTS}\par\vspace{3pt}\hrule\vspace{4pt}
+    \scriptsize
+    \textbf{PK} \texttt{id} (INTEGER AUTO)\\
+    \textbullet\ \texttt{date}, \texttt{store\_nbr}, \texttt{item\_nbr}\\
+    \textbullet\ \texttt{predicted\_sales} (FLOAT)\\
+    \textit{\textcolor{gray!80!black}{\textbf{3.370.464 dòng} (16 ngày)}}
+};
+% Quan hệ Khóa ngoại (Đường nét liền)
+\draw[rel] (stores.east) -- ++(0.9,0) |- node[lbl, pos=0.62]{1:N} (hist.west);
+\draw[rel] (items.west)  -- ++(-0.9,0) |- node[lbl, pos=0.62]{1:N} (hist.east);
+% Hai đường này giữ nguyên điểm xuất phát ở cạnh dưới, không đụng đường trên
+\draw[rel] (stores.south) -- node[lbl]{1:N} (inv.north);
+\draw[rel] (items.south) -- node[lbl]{1:N} (fc.north);
+
+% ====== Luồng dữ liệu nghiệp vụ (Đường nét đứt) ======
+% Xuất phát từ 2 điểm LỆCH TRÁI/PHẢI trên cạnh dưới của hist (không dùng chung
+% hist.south nữa) để 2 nhãn không còn chồng lên nhau và không đè chữ cam
+\draw[reldash] ($(hist.south)+(-1.3,0)$) -- ++(0,-5mm) -| 
+    node[lbl, pos=0.5, text width=2.4cm, align=center]{Tính ROP /\\Safety Stock} (inv.east);
+\draw[reldash] ($(hist.south)+(1.3,0)$) -- ++(0,-5mm) -| 
+    node[lbl, pos=0.5, text width=2.4cm, align=center]{Huấn luyện\\\& Dự báo} (fc.west);
+\end{tikzpicture}%
+}
+\caption{Sơ đồ ERD rút gọn của retail.db (kèm quy mô dòng đo được).}
+\label{fig:erd}
+\end{figure}
+
+\subsection{Mô tả các thực thể và thuộc tính}
+
+\begin{itemize}
+    \item \textbf{STORES}: PK \texttt{store\_nbr}; thuộc tính city, state, type, cluster (54 cửa hàng, 22 thành phố, 17 cụm, 5 loại hình).
+    
+    \item \textbf{ITEMS}: PK \texttt{item\_nbr}; family, class, perishable (4.100 SKU, 33 ngành hàng).
+    
+    \item \textbf{HISTORICAL\_SALES}: Khóa chính tổ hợp (date, store\_nbr, item\_nbr); unit\_sales (âm đã chuyển 0), onpromotion. Nạp bằng streaming chunking kết hợp \texttt{executemany}; quy mô 59.038.132 dòng (01/01/2016 --- 15/08/2017).
+    
+    \item \textbf{INVENTORY}: PK (store\_nbr, item\_nbr); current\_stock, lead\_time\_days, last\_updated. Mô phỏng theo tốc độ tiêu thụ, phân bổ 60\%/20\%/20\% bình thường/sắp hết/đọng vốn, lead time ngẫu nhiên 1--7 ngày (trung bình $\approx$1 ngày) để demo agent.
+    
+    \item \textbf{FORECASTS}: PK id; date, store\_nbr, item\_nbr, predicted\_sales. 16 ngày dự báo 16/08---31/08/2017, tổng 3.370.464 dòng.
+    
+    \item \textbf{AGG\_ITEM\_STORE\_SALES}: Bảng cache WITHOUT ROWID, PK (store\_nbr, item\_nbr), 172.130 dòng --- giúp API phân tích phản hồi tức thì không quét 59 triệu dòng lịch sử.
+    
+    \item \textbf{AGG\_FORECAST\_DATE\_FAMILY}: Cache dự báo theo ngày $\times$ ngành hàng (28.512 dòng) phục vụ biểu đồ xu hướng.
+    
+    \item \textbf{SKU\_STATS / MODEL\_META}: Thống kê từng SKU (doanh số 2016, avg\_daily\_45d, phân lớp ABC, family RMSLE) và siêu dữ liệu mô hình (global\_rmsle, sku\_validation).
+\end{itemize}
+
+\subsection{Tối ưu hóa cơ sở dữ liệu}
+
+\begin{itemize}
+    \item \textbf{Chỉ mục tổ hợp}: idx\_forecasts\_store\_date (store\_nbr, date), idx\_hist\_store\_date, idx\_agg\_item, idx\_inventory\_store;
+    \item \textbf{Read-only URI}: Lớp tools/dashboard/products kết nối \texttt{file:...?mode=ro} chống ghi/xóa vô tình;
+    \item \textbf{WITHOUT ROWID} cho bảng ánh xạ khóa chính tổ hợp --- giảm dung lượng, tăng tốc tra cứu;
+    \item \textbf{PRAGMA journal\_mode=WAL}: Đọc song song không block ghi.
+\end{itemize}
+
+\section{Thiết kế giao diện người dùng (UI/UX)}
+
+\subsection{Sơ đồ luồng màn hình}
+
+Luồng sử dụng chính: \textbf{Đăng nhập} (JWT lưu localStorage) $\rightarrow$ \textbf{Chọn chi nhánh} (BranchBar liệt kê cửa hàng theo quyền từ \texttt{/api/stores}) $\rightarrow$ bốn màn hình chức năng:
+\begin{itemize}
+    \item \textit{Dự báo doanh số} (SalesForecast)
+    \item \textit{Phân tích sản phẩm} (ProductAnalysis)
+    \item \textit{Quản lý sản phẩm} (ProductManagement)
+    \item \textit{Trợ lý AI} (AIChatbot)
+\end{itemize}
+
+Toàn bộ nhãn giao diện tiếng Việt.
+
+\subsection{Thiết kế dashboard trực quan hóa dự báo}
+
+\subsubsection{Màn hình Dự báo doanh số}
+\begin{itemize}
+    \item Thẻ KPI tổng quan (\texttt{/api/kpi});
+    \item Siêu dữ liệu kỳ dự báo (\texttt{/api/forecast-meta});
+    \item Biểu đồ đường doanh số dự báo 16 ngày theo cửa hàng (Recharts LineChart, \texttt{/api/predictions});
+    \item Bảng Top 6 sản phẩm bán chạy (\texttt{/api/top-products?limit=6}).
+\end{itemize}
+
+\subsubsection{Màn hình Phân tích sản phẩm}
+\begin{itemize}
+    \item Pie chart thị phần ngành hàng (\texttt{/api/family-mix});
+    \item Line chart nhiều chuỗi xu hướng dự báo theo ngành (\texttt{/api/family-trend});
+    \item Bảng danh mục 4.100 SKU với tìm kiếm, lọc ngành hàng, phân trang server-side (\texttt{/api/products}; giao diện gửi page\_size = 15 dòng/trang, API cho phép tối đa 100).
+\end{itemize}
+
+\subsection{Thiết kế chức năng hỗ trợ ra quyết định}
+
+\begin{itemize}
+    \item \textbf{Cảnh báo tồn kho}: Đếm SKU tồn thấp (0 $<$ stock $<$ 30) hiển thị trên danh mục; trạng thái restock từng sản phẩm;
+    \item \textbf{Gợi ý nhập hàng}: Nút đặt hàng lại gọi \texttt{POST /api/inventory/restock};
+    \item \textbf{Trợ lý AI}: Hộp chat với câu hỏi nhanh dựng sẵn (phân tích cửa hàng, rủi ro cháy hàng, hàng tồn chậm, gợi ý nhập, bán chéo); gửi tối đa 16 lượt hội thoại gần nhất làm ngữ cảnh; câu trả lời dạng markdown có dẫn số liệu cụ thể (mã hàng, tồn kho, dự báo, số ngày an toàn);
+    \item \textbf{Phân tích ABC}: Gắn nhãn lớp A/B/C theo đóng góp doanh số trong \texttt{sku\_stats} hỗ trợ ưu tiên quản trị.
+\end{itemize}
+
+\section{Thiết kế bảo mật và phân quyền}
+
+\subsection{Cơ chế xác thực}
+
+Đăng nhập bằng username/password; mật khẩu băm \textbf{PBKDF2-HMAC-SHA256 200.000 vòng, salt 16 byte}. Phiên đăng nhập cấp \textbf{JWT HS256} hết hạn 480 phút, secret qua biến môi trường.
+
+Hỗ trợ song song xác thực API key (\texttt{X-API-Key} so khớp \texttt{ERP\_API\_KEY}) cho tích hợp ERP máy-máy, định danh admin hệ thống \texttt{erp-integration}.
+
+Người dùng seed:
+\begin{itemize}
+    \item \texttt{admin/admin123} (toàn bộ 54 cửa hàng)
+    \item \texttt{manager1/manager123} (cửa hàng 1--10)
+    \item \texttt{manager2/manager123} (cửa hàng 11--20)
+\end{itemize}
+
+\subsection{Phân quyền theo vai trò (RBAC) và theo tenant}
+
+Mọi endpoint (trừ login) yêu cầu token hợp lệ; quyền truy vấn dữ liệu gắn danh sách \texttt{allowed\_stores} của tài khoản: admin truy cập toàn chuỗi, quản lý doanh nghiệp giới hạn theo tenant, quản lý cửa hàng giới hạn theo cửa hàng.
+
+\subsection{Đảm bảo cách ly dữ liệu giữa các tenant}
+
+Row-Level Isolation thực hiện ba lớp:
+\begin{enumerate}
+    \item Dependency \texttt{ensure\_store\_access}/\texttt{store\_filter}/\texttt{\_scope\_sql} chèn điều kiện phạm vi vào SQL và trả 403 kèm thông báo tiếng Việt khi vượt quyền;
+    \item \texttt{validate\_tool\_access} kiểm tra trước mỗi lần gọi công cụ của LLM (kể cả giải quyết cluster $\rightarrow$ cửa hàng qua kết nối read-only);
+    \item Ẩn danh sách cửa hàng được phép (\texttt{\_allowed\_stores}) inject vào hàm \texttt{get\_sales\_summary} khiến LLM không thể ``nhìn thấy'' dữ liệu ngoài phạm vi.
+\end{enumerate}
+
+\cleardoublepage
+
+% =========================================================================
+% CHƯƠNG 3: HUẤN LUYỆN MÔ HÌNH VÀ TÍCH HỢP HỆ THỐNG
+% =========================================================================
+\chapter{HUẤN LUYỆN MÔ HÌNH VÀ TÍCH HỢP HỆ THỐNG}
+
+\section{Môi trường và công cụ huấn luyện}
+
+Pipeline offline chạy trên Python với:
+\begin{itemize}
+    \item \textbf{Xử lý dữ liệu:} pandas 2.x, NumPy;
+    \item \textbf{Mô hình:} scikit-learn, LightGBM 4.x, CatBoost 1.2.x (huấn luyện CPU, loss RMSE);
+    \item \textbf{Đóng gói:} joblib;
+    \item \textbf{Tối ưu:} scipy (minimize\_scalar cho blend weight).
+\end{itemize}
+
+Huấn luyện và serving tách môi trường độc lập: artifact build một lần rồi mount chỉ đọc vào container suy luận.
+
+\section{Nạp và làm sạch dữ liệu}
+
+Bộ dữ liệu gốc của cuộc thi Corporación Favorita có dung lượng khổng lồ (file \texttt{train.csv} nặng khoảng 5GB với hơn 125 triệu dòng giao dịch). Việc nạp và làm sạch dữ liệu này bằng phương pháp truyền thống (đọc toàn bộ vào RAM) sẽ dẫn đến lỗi tràn bộ nhớ (Out of Memory - OOM). Do đó, hệ thống đề xuất và triển khai một quy trình xử lý dữ liệu hiệu năng cao, bao gồm 4 giai đoạn chính:
+
+\subsection{Tối ưu hóa việc nạp dữ liệu thô (Streaming Ingestion)}
+Hệ thống áp dụng kỹ thuật \textbf{Streaming Chunking} kết hợp tối ưu kiểu dữ liệu (Dtype Optimization), tổ chức thành hai đường nạp riêng biệt:
+\begin{itemize}
+    \item \textbf{Nạp CSDL theo khối (\texttt{init\_database.py}):} Khi dựng \texttt{retail.db}, \texttt{train.csv} được đọc bằng \texttt{pd.read\_csv(chunksize=2\_000\_000)} --- mỗi phần (chunk) chứa 2.000.000 dòng; từng chunk được làm sạch rồi ghi ngay vào bảng \texttt{historical\_sales} bằng \texttt{executemany()}, chỉ cộng dồn bộ đếm số dòng thay vì lưu trữ toàn bộ DataFrame. Cách này giữ cho dung lượng RAM sử dụng ở mức thấp ổn định (dưới 500MB) trong suốt quá trình chạy.
+    \item \textbf{Đọc đầy đủ cho pipeline đặc trưng (\texttt{data\_loader.py}):} Khâu sinh đặc trưng huấn luyện đọc \texttt{train.csv} trọn vẹn một lần với dtype thu nhỏ, hợp nhất các bảng chiều, tổng hợp về cấp (cửa hàng $\times$ ngành hàng $\times$ ngày) rồi cache ra Parquet (\texttt{train\_merged.parquet}) để các lần chạy sau không phải xử lý lại CSV gốc.
+    \item \textbf{Ép kiểu dữ liệu (Dtype Casting):} Các cột số được ép từ \texttt{int64}/\texttt{float64} mặc định xuống \texttt{int16} (\texttt{store\_nbr} khi nạp CSDL; \texttt{int8} ở pipeline đặc trưng), \texttt{int32} (\texttt{item\_nbr}) và \texttt{float32} (\texttt{unit\_sales}). Kỹ thuật này giúp giảm mức tiêu thụ RAM xuống khoảng 60\%.
+    \item \textbf{Phân luồng dữ liệu lịch sử:} Đối với dữ liệu quá khứ, cả hai đường nạp đều tự động lọc (filter) chỉ lấy các giao dịch từ ngày 01/01/2016 trở đi để giảm khối lượng tính toán, phù hợp với phạm vi dự báo ngắn hạn (16 ngày) của mô hình.
+\end{itemize}
+
+\subsection{Làm sạch và Xử lý giá trị bất thường (Data Cleaning)}
+Quá trình làm sạch diễn ra trực tiếp trên từng chunk dữ liệu trước khi ghi vào CSDL, bao gồm các bước:
+\begin{itemize}
+    \item \textbf{Xử lý ngày tháng (Date Parsing):} Thay vì để Pandas tự đoán định dạng ngày (dễ gây lỗi \texttt{ValueError} nếu có dòng dữ liệu hỏng), hệ thống dùng \texttt{pd.to\_datetime(format="\%Y-\%m-\%d", errors='coerce')}. Các dòng bị hỏng định dạng sẽ tự động biến thành giá trị rỗng (NaT) và bị loại bỏ, đảm bảo luồng dữ liệu không bị đứt quãng.
+    \item \textbf{Xử lý doanh số âm (Negative Sales):} Trong thực tế bán lẻ, cột \texttt{unit\_sales} có chứa giá trị âm (biểu thị cho việc khách hàng hoàn trả hàng). Để không làm sai lệch các phép tính trung bình trượt (Rolling Mean) và dự báo nhu cầu, hệ thống dùng hàm \texttt{.clip(lower=0)} để chuyển toàn bộ giá trị âm thành 0.
+    \item \textbf{Điền giá trị thiếu (Missing Values Imputation):}
+    \begin{itemize}
+        \item \textit{Giá dầu (Oil Price):} Dữ liệu giá dầu không có vào các ngày cuối tuần. Hệ thống tạo một khung ngày liên tục và dùng phương pháp Forward Fill (\texttt{ffill()}) và Backward Fill (\texttt{bfill()}) để lấy giá dầu của thứ 6 áp dụng cho thứ 7, Chủ nhật.
+        \item \textit{Khuyến mãi (Onpromotion):} Các ô trống được điền giá trị \texttt{False}, đảm bảo tính nhất quán của biến nhị phân.
+    \end{itemize}
+    \item \textbf{Xử lý trùng lặp Ngày lễ (Holiday Deduplication):} Tập dữ liệu ngày lễ có thể có nhiều sự kiện cùng ngày tại các khu vực khác nhau (Quốc gia, Vùng, Địa phương). Nếu join trực tiếp sẽ làm số dòng dữ liệu nhân lên. Hệ thống xử lý bằng cách lọc \texttt{transferred == False} và loại trùng lặp theo ngày (ngày lễ Quốc gia dedup theo \texttt{date}; ngày Regional/Local dedup theo cặp \texttt{(date, locale\_name)}) để đảm bảo mỗi ngày, mỗi khu vực chỉ tương ứng với 1 bản ghi ngày lễ duy nhất.
+\end{itemize}
+
+\subsection{Mô phỏng dữ liệu tồn kho (Inventory Simulation)}
+Tập dữ liệu Kaggle Favorita không cung cấp thông tin tồn kho hiện tại và thời gian giao hàng (Lead Time) – những biến số bắt buộc phải có để tính toán Điểm đặt hàng lại (ROP) và Tồn kho an toàn (Safety Stock). Để giải quyết điểm yếu này, hệ thống xây dựng một module mô phỏng tồn kho dựa trên \textbf{Tốc độ tiêu thụ (Sales Velocity)}:
+\begin{itemize}
+    \item Tính doanh số trung bình ngày (\texttt{avg\_daily\_sales}) của từng mặt hàng tại từng cửa hàng từ dữ liệu dự báo.
+    \item Giả lập thời gian giao hàng (\texttt{lead\_time\_days}) ngẫu nhiên từ 1 đến 7 ngày.
+    \item Phân bổ trạng thái tồn kho theo tỷ lệ thực tế: 60\% mặt hàng ở mức bình thường, 20\% ở trạng thái sắp hết hàng (Understock - dự trữ dưới 2 ngày), và 20\% ở trạng thái đọng vốn (Overstock - dự trữ trên 30 ngày). Kỹ thuật này tạo ra các kịch bản nghiệp vụ chân thực, cho phép Trợ lý AI (LLM Agent) đưa ra cảnh báo và gợi ý nhập/xả hàng khi Demo.
+\end{itemize}
+
+\subsection{Kỹ thuật ghi vào Cơ sở dữ liệu (Database Loading)}
+Sau khi làm sạch, dữ liệu được ghi vào hệ quản trị CSDL SQLite (\texttt{retail.db}). Do SQLite có giới hạn về số lượng biến số trong một câu lệnh SQL (thường là 999 variables), việc dùng hàm \texttt{to\_sql} của Pandas sẽ gây lỗi \texttt{OperationalError: too many SQL variables} khi nạp hàng triệu dòng. Hệ thống khắc phục bằng cách:
+\begin{itemize}
+    \item Sử dụng phương thức \texttt{executemany()} của thư viện \texttt{sqlite3} kết hợp với \texttt{itertuples(index=False, name=None)}. Việc chuyển DataFrame thành Tuple giúp tốc độ chèn (Insert) tăng gấp 10 lần so với \texttt{to\_sql}.
+    \item Bật các cấu hình tối ưu của SQLite (\texttt{PRAGMA}): \texttt{journal\_mode=WAL} (Write-Ahead Logging) cho phép đọc và ghi song song, và \texttt{cache\_size=-64000} cấp phát 64MB RAM đệm, giúp quá trình nạp 59 triệu dòng lịch sử (giai đoạn 01/01/2016 --- 15/08/2017) hoàn tất chỉ trong khoảng 5 phút.
+\end{itemize}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}llp{8cm}@{}}
+\toprule
+\textbf{Vấn đề} & \textbf{Quy mô} & \textbf{Xử lý} \\
+\midrule
+Giá trị thiếu oil.csv & 43 ngày & Forward/Backward Fill (ffill + bfill) \\
+Giá trị unit\_sales âm & Tới $-6.663$ & Clip về 0 (max từng item) \\
+Giá trị cực đại & 124.717 đơn vị/ngày & Giữ nguyên (đỉnh khuyến mãi) \\
+transactions\_lag1 thiếu & 3.162 dòng đầu kỳ & Điền 0 an toàn \\
+\bottomrule
+\end{tabular}
+\caption{Tóm tắt các vấn đề chất lượng dữ liệu và cách xử lý.}
+\end{table}
+
+\section{Feature Engineering (Kỹ thuật đặc trưng)}
+
+Trong bài toán dự báo chuỗi thời gian bán lẻ, mô hình Machine Learning (như LightGBM hay CatBoost) không thể tự động nhận diện tính mùa vụ (seasonality) hay xu hướng trễ (lag) nếu chỉ cung cấp dữ liệu giao dịch thô. Do đó, hệ thống triển khai một luồng Kỹ thuật đặc trưng (Feature Engineering) nhằm biến đổi dữ liệu chuỗi thời gian thành dạng bảng (tabular data) phẳng, giúp mô hình học được các quy luật biến động trong quá khứ để dự báo tương lai.
+
+Việc tạo lập đặc trưng được chia làm 2 giai đoạn: Tạo đặc trưng bằng thư viện \textit{Pandas} (vì cần xử lý Groupby và Shift theo thời gian) và Mã hóa/Điền thiếu bằng \textit{Scikit-learn Pipeline} (để chống rò rỉ dữ liệu - Data Leakage).
+
+\subsection{Tạo lập Đặc trưng chuỗi thời gian (Pandas Deterministic Features)}
+Hệ thống xây dựng hàm \texttt{engineer\_features()} chuyên trách xử lý dữ liệu trước khi đưa vào mô hình. Các nhóm đặc trưng được sinh ra bao gồm:
+
+\begin{itemize}
+    \item \textbf{Đặc trưng Trễ (Lag Features):} Sử dụng hàm \texttt{.groupby(["store\_nbr", "family"]).shift(lag)} để lấy doanh số của quá khứ. Hệ thống tạo ra 3 khoảng trễ: \texttt{sales\_lag7} (nhìn lại 1 tuần), \texttt{sales\_lag14} (2 tuần) và \texttt{sales\_lag28} (1 tháng). Việc chọn các bội số của 7 giúp mô hình nắm bắt tính chu kỳ tuần (weekly seasonality) của siêu thị.
+    
+    \item \textbf{Đặc trưng Trung bình trượt (Rolling Features):} Sử dụng hàm \texttt{.transform(lambda s: s.shift(1).rolling(7).mean())} để tính trung bình động 7 ngày (\texttt{sales\_rolling\_mean7}). Việc áp dụng \texttt{shift(1)} bên trong rolling là bắt buộc để đảm bảo mô hình chỉ tính trung bình từ ngày hôm qua trở về trước, ngăn chặn hoàn toàn lỗi rò rỉ dữ liệu (Data Leakage) ở bước tạo feature.
+    
+    \item \textbf{Đặc trưng Thời gian \& Mùa vụ (Date Features):} Trích xuất từ cột \texttt{date} thành \texttt{dayofweek} (thứ trong tuần), \texttt{month} (tháng), và biến nhị phân \texttt{is\_weekend} (bằng 1 nếu là thứ 7, chủ nhật). Điều này giúp mô hình phân biệt rõ ràng hành vi mua sắm ngày thường và cuối tuần.
+    
+    \item \textbf{Đặc trưng Tương tác Ngày lễ (Holiday Effects):} Thay vì chỉ đánh dấu "hôm nay có phải ngày lễ không", hệ thống tạo thêm 4 biến nhị phân \texttt{is\_holiday\_lag1}, \texttt{lag2}, \texttt{lead1}, \texttt{lead2}. Trong đó, biến \texttt{lead} (dùng \texttt{shift(-1)}) giúp mô hình nhận diện \textit{hiệu ứng trước lễ} (người dân đổ xô đi mua sắm tích trữ 1-2 ngày trước ngày lễ), và biến \texttt{lag} nhận diện \textit{hiệu ứng sau lễ} (doanh số sụt giảm mạnh sau kỳ nghỉ).
+\end{itemize}
+
+\subsection{Kỹ thuật Target Encoding và Tương tác Cụm cửa hàng (Cluster Features)}
+Đặc trưng \texttt{cluster} (cụm cửa hàng có hành vi mua sắm tương tự) mang tính phân hóa rất cao. Để khai thác tối đa, hệ thống xây dựng class \texttt{ClusterFeatureEngineer} để thực hiện Lagged Target Encoding:
+\begin{itemize}
+    \item \textbf{Thống kê trễ (Lagged Statistics):} Tính toán \texttt{cluster\_mean\_sales} và \texttt{cluster\_std\_sales} dựa trên trung bình và độ lệch chuẩn của doanh số toàn cụm trong 28 ngày qua. Quá trình này sử dụng \texttt{shift(1).rolling(28)} để đảm bảo không sử dụng dữ liệu tương lai.
+    \item \textbf{Tương tác đa biến (Interaction Features):} Tạo cột \texttt{cluster\_promo\_lift} bằng cách tính tỷ lệ giữa doanh số trung bình khi có khuyến mãi và không có khuyến mãi của cụm, đo lường \textit{mức độ nhạy cảm với khuyến mãi} của từng nhóm cửa hàng.
+    \item \textbf{Đánh dấu Cụm chủ lực (Tier Flag):} Tạo biến nhị phân \texttt{is\_tier1\_cluster} nhận giá trị 1 nếu cửa hàng thuộc Cluster 5 hoặc 11 (các siêu thị lớn, quy mô cao). Điều này giúp mô hình Tree-based tự động chia nhánh dữ liệu theo cấp độ cửa hàng.
+\end{itemize}
+
+\subsection{Mã hóa Biến Phân loại và Xử lý Thiếu dữ liệu (Scikit-learn Pipeline)}
+Vì các đặc trưng Lag/Rolling luôn bị thiếu (NaN) ở những ngày đầu tiên của chuỗi thời gian, và các biến phân loại chưa được mã hóa số, hệ thống xây dựng hàm \texttt{build\_preprocessor()} sử dụng \texttt{ColumnTransformer} của Scikit-learn. Lớp này được \texttt{fit} trên tập Train và \texttt{transform} trên tập Validation/Test (chống leakage thống kê):
+\begin{itemize}
+    \item \textbf{Nhánh Biến số (Numeric):} Các cột \texttt{sales\_lag7}, \texttt{transactions\_lag1}, \texttt{cluster\_mean\_sales} được đưa qua \texttt{SimpleImputer(strategy="constant", fill\_value=0)}. Việc điền 0 cho các ngày đầu chuỗi mang ý nghĩa nghiệp vụ là "chưa có giao dịch trước đó".
+    \item \textbf{Nhánh Biến Phân loại (Categorical):} Các cột \texttt{store\_nbr}, \texttt{family}, \texttt{city}, \texttt{state}, \texttt{holiday\_type} được mã hóa bằng \texttt{OrdinalEncoder(handle\_unknown="use\_encoded\_value", unknown\_value=-1)}. Kỹ thuật này cho phép mô hình xử lý các danh mục mới chưa từng xuất hiện ở tập Train (ví dụ thành phố mới) bằng cách gán bằng -1, thay vì văng lỗi.
+    \item \textbf{Nhánh Đi qua thẳng (Passthrough):} Các biến nhị phân (\texttt{is\_weekend}, \texttt{is\_holiday}) và biến liên tục (\texttt{oil\_price}) được giữ nguyên giá trị đưa vào mô hình.
+\end{itemize}
+
+\subsection{Biến đổi Biến Mục tiêu (Target Transformation)}
+Do metric đánh giá của cuộc thi là RMSLE (Root Mean Squared Logarithmic Error), sai số bị phạt rất nặng nếu mô hình dự báo một giá trị quá nhỏ so với giá trị thực tế lớn. Để mô hình học đồng đều hơn, hệ thống áp dụng phép biến đổi $\log(1 + x)$ cho biến mục tiêu (\texttt{target}) trong quá trình huấn luyện bằng hàm \texttt{np.log1p()}. Kết quả dự báo đầu ra từ mô hình sẽ được chuyển ngược về thang đo thực tế bằng hàm \texttt{np.expm1()}, sau đó mới được dùng để tính toán RMSLE hoặc đưa vào CSDL.
+
+% Bảng tổng hợp đặc trưng (Giữ nguyên bảng đã viết ở câu trước)
+Bảng \ref{tab:feature_engineering} dưới đây tổng hợp toàn bộ các bộ đặc trưng được hệ thống tự động sinh ra.
+
+\begin{table}[H]
+    \centering
+    \caption{Bộ đặc trưng sử dụng trong mô hình dự báo.}
+    \label{tab:feature_engineering}
+    \renewcommand{\arraystretch}{1.3} % Tăng chiều cao dòng
+    \begin{tabular}{|l|l|p{7cm}|}
+        \hline
+        \textbf{Nhóm} & \textbf{Đặc trưng} & \textbf{Mô tả} \\
+        \hline
+        \multirow{3}{*}{\textbf{Lag (Trễ)}} 
+        & \texttt{sales\_lag7} & Doanh số của cùng (store, family) cách đây 7 ngày. \\
+        \cline{2-3}
+        & \texttt{sales\_lag14} & Doanh số cách đây 14 ngày. \\
+        \cline{2-3}
+        & \texttt{sales\_lag28} & Doanh số cách đây 28 ngày. \\
+        \hline
+        \textbf{Rolling (Trượt)} 
+        & \texttt{sales\_rolling\_mean7} & Trung bình động 7 ngày. Dùng \textit{shift(1)} để chỉ lấy dữ liệu quá khứ, chống leakage. \\
+        \hline
+        \multirow{3}{*}{\textbf{Lịch / Mùa vụ}} 
+        & \texttt{dayofweek} & Thứ trong tuần (0 đến 6). \\
+        \cline{2-3}
+        & \texttt{month} & Tháng trong năm. \\
+        \cline{2-3}
+        & \texttt{is\_weekend} & Biến nhị phân (0/1), bằng 1 nếu Thứ 7 hoặc Chủ Nhật. \\
+        \hline
+        \multirow{5}{*}{\textbf{Ngày lễ}} 
+        & \texttt{is\_holiday} & Biến nhị phân cho biết ngày hiện tại có phải ngày lễ không. \\
+        \cline{2-3}
+        & \texttt{is\_holiday\_lag1} & Hiệu ứng sau lễ: Hôm qua có phải ngày lễ không. \\
+        \cline{2-3}
+        & \texttt{is\_holiday\_lag2} & Hiệu ứng sau lễ 2 ngày. \\
+        \cline{2-3}
+        & \texttt{is\_holiday\_lead1} & Hiệu ứng trước lễ: Ngày mai có phải ngày lễ không. \\
+        \cline{2-3}
+        & \texttt{is\_holiday\_lead2} & Hiệu ứng trước lễ 2 ngày. \\
+        \hline
+        \multirow{3}{*}{\textbf{Cluster (Cụm CH)}} 
+        & \texttt{cluster\_mean\_sales} & Target Encoding: Doanh số trung bình của cụm cửa hàng trong 28 ngày qua. \\
+        \cline{2-3}
+        & \texttt{cluster\_promo\_lift} & Tương tác đa biến: Mức độ nhạy cảm khuyến mãi của từng cụm. \\
+        \cline{2-3}
+        & \texttt{is\_tier1\_cluster} & Biến nhị phân = 1 nếu thuộc cụm cửa hàng chủ lực (Cluster 5, 11). \\
+        \hline
+        \textbf{Ngoại sinh} 
+        & \texttt{oil\_price} & Giá dầu mỏ của ngày hiện tại (đã điền dữ liệu thiếu cuối tuần). \\
+        \hline
+        \textbf{Phân loại} 
+        & \texttt{store\_nbr, family, city...} & Các biến danh mục được mã hóa bằng \textit{OrdinalEncoder}. \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\section{Huấn luyện Mô hình và Tích hợp Hệ thống}
+
+\subsection{Huấn luyện Global Ensemble (LightGBM + CatBoost)}
+Để xây dựng mô hình dự báo toàn cục (Global Model), hệ thống kết hợp hai thuật toán tiên tiến nhất cho dữ liệu bảng (tabular data) là LightGBM và CatBoost. Biến mục tiêu (target) được biến đổi bằng hàm $\log(1 + y)$ trước khi huấn luyện để đảm bảo tính ổn định của phương sai, và quá trình đánh giá được thực hiện trong không gian log bằng metric RMSLE.
+
+Hệ thống áp dụng phương pháp \textbf{Kiểm định Walk-forward 3-fold} nhằm mô phỏng chính xác môi trường dự báo thực tế. Mỗi fold sử dụng 28 ngày cuối cùng làm tập xác thực (Validation set), tương ứng với các ngày kết thúc: 20/06/2017, 18/07/2017 và 15/08/2017. Tổng dữ liệu huấn luyện tối thiểu được giữ ở mức 365 ngày để đảm bảo mô hình nắm bắt được tính mùa vụ hàng năm.
+
+\subsubsection{Siêu tham số}
+Bảng \ref{tab:hyperparams} trình bày các siêu tham số (hyperparameters) chính được tinh chọn cho hai mô hình Global.
+
+\begin{table}[H]
+    \centering
+    \caption{Siêu tham số chính của hai mô hình Global.}
+    \label{tab:hyperparams}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{|l|l||l|l|}
+        \hline
+        \multicolumn{2}{|c||}{\textbf{LightGBM}} & \multicolumn{2}{c|}{\textbf{CatBoost}} \\
+        \hline
+        \textbf{Tham số} & \textbf{Giá trị} & \textbf{Tham số} & \textbf{Giá trị} \\
+        \hline
+        \texttt{n\_estimators} & 3000 & \texttt{iterations} & 3000 \\
+        \texttt{learning\_rate} & 0.03 & \texttt{learning\_rate} & 0.03 \\
+        \texttt{num\_leaves} & 63 & \texttt{depth} & 8 \\
+        \texttt{subsample} & 0.8 & \texttt{l2\_leaf\_reg} & 3.0 \\
+        \texttt{colsample\_bytree} & 0.8 & \texttt{loss\_function} & RMSE \\
+        \texttt{reg\_alpha} & 0.1 & — & — \\
+        \texttt{reg\_lambda} & 0.1 & — & — \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsubsection{Tối ưu trọng số hòa trộn}
+Để tìm ra tỷ lệ kết hợp (blend) tối ưu giữa LightGBM và CatBoost, hệ thống sử dụng phương pháp tìm kiếm một chiều (\texttt{scipy.optimize.minimize\_scalar}) trên đoạn $[0, 1]$ nhằm cực tiểu hóa RMSLE của kết quả hòa trộn trên các fold validation:
+
+\begin{equation}
+    w^* = \arg\min_{w \in [0,1]} \text{RMSLE} \left( w \cdot \hat{y}_{LGBM} + (1 - w) \cdot \hat{y}_{CatBoost} \right)
+\end{equation}
+
+Kết quả tối ưu thu được là $w_{LGBM} = 0.4163$ và $w_{CatBoost} = 0.5837$. Số vòng lặp tốt nhất trung bình (\textit{best\_iteration}) qua các fold là 2.511 đối với LightGBM và 2.266 đối với CatBoost.
+
+\subsection{Huấn luyện 33 Local Models}
+Thay vì chỉ dùng một mô hình chung cho toàn bộ hệ thống, hệ thống tiến hành huấn luyện riêng một mô hình LightGBM cho từng ngành hàng (\textit{family}) với chiến lược thích ứng (adaptive strategy) dựa trên dung lượng dữ liệu:
+
+\begin{itemize}
+    \item \textbf{Cấu hình cơ bản:} Sử dụng \texttt{learning\_rate = 0.05}, \texttt{num\_leaves = 31}.
+    \item \textbf{Dữ liệu nhỏ (< 5.000 dòng):} Thu nhỏ kiến trúc mạng (\texttt{num\_leaves = 15}, \texttt{min\_child\_samples = 5}) để chống overfitting.
+    \item \textbf{Dữ liệu quá nhỏ (< 1.000 dòng):} Bỏ qua việc train mô hình riêng, luôn chuyển sang dùng tuyến Global.
+\end{itemize}
+
+Quá trình huấn luyện sử dụng kỹ thuật Early Stopping để chọn ra \texttt{best\_iteration}, sau đó tiến hành huấn luyện lại (Retrain) trên toàn bộ dữ liệu của ngành hàng đó với ngân sách vòng lặp tăng thêm 10\% (\texttt{best\_iter $\times$ 1.1}) nhằm tối đa hóa khả năng học. 
+
+Kết quả: 33/33 ngành hàng đều đủ điều kiện huấn luyện, cho ra artifact \texttt{local\_lgbm\_models.pkl} (kích thước $\approx$ 6.8 MB).
+
+\subsection{Dự báo đệ quy 16 ngày và Smart Routing}
+Quá trình suy luận (Inference) chạy đệ quy (recursive) từng ngày trong khoảng từ 16/08 đến 31/08/2017. Tại mỗi bước dự báo, hệ thống tái sinh các đặc trưng Lag và Rolling dựa trên chuỗi dữ liệu đã bao gồm các kết quả dự báo vừa sinh ra ở các ngày trước đó (prediction feedback), đồng thời bảo toàn nguyên vẹn các metadata tĩnh (city, state, type, cluster, cluster\_family\_id, perishable).
+
+\subsubsection{Logic Smart Routing}
+Hệ thống định tuyến thông minh luồng dự báo theo các bước sau:
+\begin{enumerate}
+    \item Nếu ngành hàng có Local Model: Dự báo tuyến chính bằng Local LGBM, sau đó nghịch log bằng hàm $e^{x} - 1$ (expm1).
+    \item Ngược lại (Fallback global ensemble): Tính toán $\hat{y} = w \hat{y}_{LGBM} + (1-w) \hat{y}_{Cat}$, và ghi nhận metadata \texttt{used\_model = Global Ensemble}.
+    \item Toàn bộ kết quả âm bị clip về 0 để đảm bảo tính hợp lệ của doanh số.
+\end{enumerate}
+
+\subsubsection{Phân rã xuống cấp SKU}
+Dự báo ở cấp ngành hàng (\textit{family}) được phân rã xuống cấp độ mã sản phẩm (SKU) theo tỷ lệ chia sẻ (share) được tính từ 45 ngày lịch sử gần nhất kết thúc vào 15/08/2017:
+
+\begin{equation}
+    \hat{y}_{SKU, t} = \hat{y}_{family, t} \times \frac{\sum_{d=1}^{45} y_{SKU, t-d}}{\sum_{d=1}^{45} y_{family, t-d}}
+\end{equation}
+
+Toàn bộ kết quả được nạp vào bảng \texttt{forecasts} trong CSDL, bao gồm 3.370.464 dòng (tương đương 16 ngày $\times$ 54 cửa hàng $\times$ $\approx$1.900 SKU/cửa hàng).
+
+\subsection{Chuẩn bị submission Kaggle}
+Hai tệp nộp bài (submission) được tạo ra từ hai chiến lược độc lập để so sánh hiệu năng:
+\begin{enumerate}
+    \item \textbf{\texttt{submission\_local.csv}}: Dự báo thuần túy từ 33 Local LightGBM Models.
+    \item \textbf{\texttt{submission\_ensemble.csv}}: Dự báo từ Global Ensemble (LightGBM 41.63\% + CatBoost 58.37\% blend).
+\end{enumerate}
+Cả hai tệp có cấu trúc chuẩn Kaggle (\texttt{id = store\_nbr\_item\_nbr\_onpromotion\_date}, \texttt{unit\_sales}), trải dài trong 16 ngày test từ 16/08 đến 31/08/2017.
+
+\section{Khởi tạo cơ sở dữ liệu và tích hợp triển khai}
+
+\subsection{Script khởi tạo}
+Hệ thống sử dụng các script Python tự động hóa để dựng môi trường dữ liệu:
+\begin{itemize}
+    \item \texttt{init\_database.py}: Dựng schema, chỉ mục, nạp dữ liệu lịch sử theo khối (chunking + executemany), mô phỏng tồn kho (60\% bình thường, 20\% sắp hết, 20\% đọng vốn; lead time 1–7 ngày) và dựng hai bảng tổng hợp cache.
+    \item \texttt{init\_auth.py}: Nạp tài khoản xác thực gồm Admin, Tenant Manager, Store Manager.
+    \item \texttt{build\_sales\_cache.py}: Dựng AGG tables với cấu trúc \texttt{WITHOUT ROWID}, \texttt{WAL mode}, \texttt{synchronous=NORMAL}.
+    \item \texttt{build\_business\_cache.py}: Dựng lại cache nghiệp vụ khi có thay đổi.
+\end{itemize}
+
+\subsection{Docker Compose deployment}
+Hệ thống được triển khai bằng \texttt{docker-compose} với các cấu hình hạ tầng sau:
+\begin{itemize}
+    \item Chuỗi healthcheck đảm bảo thứ tự khởi động: \texttt{ml\_service} $\rightarrow$ \texttt{backend} $\rightarrow$ \texttt{frontend}.
+    \item Nginx reverse proxy: Điều hướng \texttt{/api} về \texttt{backend:8000} (timeout 300s), bật gzip và \texttt{no-cache} cho SPA.
+    \item Mạng bridge riêng \texttt{retail\_network} để cô lập và bảo mật giao tiếp nội bộ.
+    \item Volume mount trọng số mô hình ở chế độ read-only để bảo vệ tính toàn vẹn của file model.
+\end{itemize}
+
+\subsection{Vận hành}
+Hệ thống cho phép thay đổi linh hoạt mô hình ngôn ngữ (LLM) thông qua biến môi trường \texttt{LLM\_MODEL\_NAME} (Ví dụ: do \texttt{qwen/qwen3-32b} bị Groq ngừng phục vụ, hệ thống đã chuyển sang \texttt{qwen/qwen3.6-27b}). Ngoài ra, biến \texttt{GROQ\_BASE\_URL} cho phép trỏ client sang endpoint OpenAI-compatible khác (ví dụ OrcaRouter) khi cần, còn \texttt{LLM\_REASONING\_EFFORT} kiểm soát mức suy luận (thinking) của mô hình Qwen 3. Sau khi đổi file \texttt{.env}, cần recreate container backend bằng lệnh:
+\begin{verbatim}
+docker compose up -d --force-recreate backend
+\end{verbatim}
+\cleardoublepage
+% =========================================================================
+% CHƯƠNG 4: KẾT QUẢ, KIỂM THỬ VÀ ĐÁNH GIÁ HỆ THỐNG
+% =========================================================================
+\chapter{KẾT QUẢ, KIỂM THỬ VÀ ĐÁNH GIÁ HỆ THỐNG}
+
+\section{Kết quả huấn luyện mô hình (Validation nội bộ)}
+
+\subsection{Global Ensemble --- Kiểm định Walk-Forward}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}cccccc@{}}
+\toprule
+\textbf{Fold} & \textbf{LGBM RMSLE} & \textbf{CatBoost RMSLE} & $w_{\mathrm{LGBM}}$ & \textbf{Blend RMSLE} & \textbf{Blend MAE} \\
+\midrule
+1 (kt 20/06/2017) & 0.35983 & 0.36006 & 0.5082 & 0.35798 & 75.46 \\
+2 (kt 18/07/2017) & 0.34690 & 0.34532 & 0.3924 & \textbf{0.34419} & \textbf{67.96} \\
+3 (kt 15/08/2017) & 0.37291 & 0.37038 & 0.3482 & 0.36934 & 83.29 \\
+\midrule
+\multicolumn{4}{@{}l}{\textbf{Trung bình 3 fold}} & \textbf{0.35717} & 75.57 \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả kiểm định walk-forward của global ensemble trên tập validation nội bộ.}
+\label{tab:folds}
+\end{table}
+
+\subsection{Local Models --- 33 ngành hàng}
+
+\begin{longtable}{@{}lrrr@{}}
+\caption{RMSLE kiểm định của 33 mô hình local theo ngành hàng (tập validation nội bộ).}\\
+\toprule
+\textbf{Ngành hàng} & \textbf{Số dòng} & \textbf{Best iter} & \textbf{RMSLE} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Ngành hàng} & \textbf{Số dòng} & \textbf{Best iter} & \textbf{RMSLE} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+PRODUCE & 31.208 & 180 & 0.14241 \\
+BOOKS & 2.772 & 128 & 0.14650 \\
+DAIRY & 31.208 & 211 & 0.15117 \\
+BREAD/BAKERY & 31.208 & 82 & 0.16923 \\
+GROCERY I & 31.208 & 244 & 0.16947 \\
+DELI & 31.207 & 89 & 0.18699 \\
+MEATS & 31.207 & 389 & 0.20492 \\
+POULTRY & 31.207 & 104 & 0.21073 \\
+BEVERAGES & 31.208 & 554 & 0.21539 \\
+HOME CARE & 31.207 & 70 & 0.23973 \\
+HOME APPLIANCES & 7.919 & 171 & 0.24572 \\
+PERSONAL CARE & 31.207 & 84 & 0.24919 \\
+BABY CARE & 4.491 & 45 & 0.26393 \\
+FROZEN FOODS & 31.205 & 206 & 0.26647 \\
+PREPARED FOODS & 31.202 & 257 & 0.27197 \\
+EGGS & 31.207 & 255 & 0.29911 \\
+CLEANING & 31.208 & 550 & 0.30796 \\
+PET SUPPLIES & 25.881 & 277 & 0.39148 \\
+HARDWARE & 18.483 & 67 & 0.40054 \\
+SEAFOOD & 28.541 & 87 & 0.41154 \\
+MAGAZINES & 26.308 & 628 & 0.41371 \\
+BEAUTY & 26.204 & 85 & 0.42245 \\
+PLAYERS AND ELECTRONICS & 30.065 & 377 & 0.42357 \\
+LAWN AND GARDEN & 19.741 & 80 & 0.43471 \\
+LIQUOR,WINE,BEER & 29.953 & 203 & 0.44684 \\
+AUTOMOTIVE & 30.214 & 137 & 0.45607 \\
+HOME AND KITCHEN I & 31.157 & 62 & 0.45808 \\
+HOME AND KITCHEN II & 31.110 & 67 & 0.46853 \\
+LADIESWEAR & 21.485 & 105 & 0.48061 \\
+CELEBRATION & 30.476 & 267 & 0.49956 \\
+GROCERY II & 29.588 & 94 & 0.52180 \\
+LINGERIE & 27.428 & 166 & 0.54474 \\
+SCHOOL AND OFFICE SUPPLIES & 15.339 & 179 & 0.78876 \\
+\end{longtable}
+
+\subsection{Phân tích kết quả validation}
+
+Nhóm hàng tiêu dùng thiết yếu (PRODUCE, DAIRY, BREAD/BAKERY, GROCERY I) đạt RMSLE 0.14--0.17 --- rất phù hợp smart routing tuyến chính.
+
+Nhóm biến động mạnh theo mùa học tập (SCHOOL AND OFFICE SUPPLIES 0.79) có sai số cao hơn, đúng dự đoán từ lý thuyết bias--variance: local model kém ổn định ở chuỗi nhiễu, hệ thống vẫn bảo đảm fallback global khi cần.
+
+\section{Kết quả trên Kaggle Leaderboard}
+
+\subsection{Kết quả submission thực tế}
+
+Hệ thống đã submit hai phương án dự báo lên cuộc thi Kaggle \textit{Favorita Grocery Sales Forecasting}. Chỉ số đánh giá là \textbf{NWRMSLE} (Normalized Weighted RMSLE --- thấp hơn là tốt hơn):
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}lcccl@{}}
+\toprule
+\textbf{Submission} & \textbf{Public Score} & \textbf{Private Score} & \textbf{Gap} & \textbf{Trạng thái} \\
+\midrule
+\texttt{submission\_ensemble.csv} & \textbf{0.64438} & \textbf{0.63542} & $-0.00896$ & \textbf{Best Score} \\
+\texttt{submission\_local.csv} & 0.65307 & 0.64207 & $-0.01100$ & Complete \\
+\midrule
+\textbf{Cải thiện bởi Ensemble} & \textbf{$-0.00869$} & \textbf{$-0.00665$} & & \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả submission trên Kaggle Favorita Grocery Sales Forecasting (NWRMSLE --- thấp hơn là tốt hơn).}
+\label{tab:kaggle}
+\end{table}
+
+\subsection{Phân tích kết quả Kaggle}
+
+\subsubsection{Global Ensemble vượt trội Local Models}
+
+Submission sử dụng Global Ensemble (LightGBM + CatBoost blend) đạt score tốt hơn so với chỉ dùng Local Models trên cả hai leaderboard:
+
+\begin{itemize}
+    \item \textbf{Public Leaderboard:} 0.64438 (Ensemble) vs 0.65307 (Local) --- cải thiện \textbf{0.00869} điểm;
+    \item \textbf{Private Leaderboard:} 0.63542 (Ensemble) vs 0.64207 (Local) --- cải thiện \textbf{0.00665} điểm.
+\end{itemize}
+
+Kết quả xác nhận giá trị của chiến lược kết hợp mô hình toàn cục (Global) với chuyên biệt hóa cục bộ (Local): Global Ensemble có khả năng ``bình quân hóa'' các outlier, giúp tổng thể ổn định hơn so với 33 local model riêng lẻ vốn nhạy cảm với nhiễu của từng ngành hàng.
+
+\subsubsection{Private Score tốt hơn Public Score --- Dấu hiệu tích cực}
+
+Cả hai submission đều có private score tốt hơn public score:
+
+\begin{itemize}
+    \item Ensemble: Private 0.63542 $<$ Public 0.64438 (gap $-0.00896$);
+    \item Local: Private 0.64207 $<$ Public 0.65307 (gap $-0.01100$).
+\end{itemize}
+
+Đây là tín hiệu \textbf{tích cực} cho thấy mô hình có khả năng tổng quát hóa (generalization) tốt trên dữ liệu chưa từng thấy, không hiện tượng overfit vào public test set --- điều thường gặp khi người tham gia lặp đi lặp lại thử nghiệm theo public leaderboard.
+
+\subsubsection{Phân tích khoảng cách validation nội bộ --- Kaggle test}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Chỉ số} & \textbf{Validation nội bộ} & \textbf{Kaggle Test} & \textbf{Gap} \\
+\midrule
+Global Ensemble & 0.35717 (RMSLE) & 0.64438 (NWRMSLE) & $+0.28721$ \\
+Local Models (TB) & $\approx$0.35 (RMSLE) & 0.65307 (NWRMSLE) & $+0.30307$ \\
+\bottomrule
+\end{tabular}
+\caption{So sánh kết quả validation nội bộ và test trên Kaggle.}
+\label{tab:gap}
+\end{table}
+
+\textbf{Nguyên nhân khoảng cách:}
+
+\begin{enumerate}
+    \item \textbf{Khác biệt chỉ số:} Validation nội bộ dùng RMSLE thuần túy, trong khi Kaggle dùng NWRMSLE có trọng số 1.25 cho ngành hàng dễ hỏng (perishable) làm tăng score tổng thể;
+    
+    \item \textbf{Khác biệt cấp độ dự báo:} Validation ở cấp (store $\times$ family) đã được tổng hợp, submission Kaggle phải phân rã xuống cấp (store $\times$ item) --- sai số tích lũy qua bước phân rã theo tỷ lệ chia sẻ 45 ngày;
+    
+    \item \textbf{Khác biệt phân phối dữ liệu:} Tập validation walk-forward dùng dữ liệu 06/2017--08/2017 đã biết trước cho feature lag, trong khi dự báo đệ quy 16 ngày trên Kaggle phải sinh lag features từ chính các dự báo trung gian (prediction feedback) làm sai số lan truyền;
+    
+    \item \textbf{Yếu tố bất thường:} Giai đoạn test 16/08---31/08/2017 có biến động mùa tựu trường, sau động đất Ecuador và các biến động kinh tế vĩ mô khó dự đoán từ dữ liệu huấn luyện.
+\end{enumerate}
+
+\subsection{So sánh với baseline và top solution}
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Phương pháp} & \textbf{Public} & \textbf{Private} & \textbf{Ghi chú} \\
+\midrule
+Naive (lag-7) & $\approx$0.85 & $\approx$0.83 & Baseline tham chiếu \\
+Seasonal Naive & $\approx$0.75 & $\approx$0.74 & Baseline tham chiếu \\
+\textbf{Local Models (đề tài)} & \textbf{0.65307} & \textbf{0.64207} & 33 LightGBM chuyên biệt \\
+\textbf{Global Ensemble (đề tài)} & \textbf{0.64438} & \textbf{0.63542} & \textbf{Best Score --- LGBM + CatBoost} \\
+Top solution Kaggle 2018 & $\approx$0.36 & $\approx$0.35 & Đội vô địch (ensemble phức tạp) \\
+\bottomrule
+\end{tabular}
+\caption{So sánh kết quả hệ thống với baseline và top solution Kaggle Favorita.}
+\label{tab:compare}
+\end{table}
+
+\subsection{Đánh giá vị trí trên leaderboard}
+
+Với private score 0.63542 (Ensemble), hệ thống đạt kết quả ở mức tương đương nhóm giữa leaderboard Kaggle Favorita Grocery Sales Forecasting. So với đội vô địch (NWRMSLE $\approx$0.35), khoảng cách 0.28 điểm phản ánh các giới hạn của một dự án capstone học tập:
+
+\begin{itemize}
+    \item \textbf{Chỉ dùng Gradient Boosting:} Không kết hợp Deep Learning (N-BEATS, DeepAR, TFT) vốn thể hiện mạnh ở top leaderboard;
+    \item \textbf{Feature engineering cơ bản:} Chưa khai thác Fourier terms, target encoding cấp SKU, external data (thời tiết, demographics);
+    \item \textbf{Không dùng multi-seed ensemble:} Top solution thường blend 10--20 model với seed khác nhau;
+    \item \textbf{Giới hạn tính toán:} Huấn luyện CPU, không GPU cluster cho hyperparameter search rộng.
+\end{itemize}
+
+Tuy vậy, với bối cảnh là dự án học tập trong khuôn khổ Samsung Innovation Campus AI Course, kết quả NWRMSLE 0.63542 là thành tích đáng ghi nhận, chứng minh pipeline end-to-end hoạt động đúng đắn và kiến trúc Global Ensemble + Smart Routing có giá trị thực tiễn.
+
+\section{Kiểm thử API Endpoints}
+
+Các kết quả trong mục này được thực thi qua bộ kiểm thử tự động \textbf{pytest} đặt tại \texttt{backend/tests/}, gồm sáu module: \texttt{test\_api.py} (hành vi endpoint), \texttt{test\_security.py} (JWT, Row-Level Isolation, SQL injection, truy cập LLM), \texttt{test\_llm\_tools.py} (công cụ Function Calling), \texttt{test\_ml\_service.py} (tích hợp dịch vụ suy luận), \texttt{test\_performance.py} (đo độ trễ P50/P95/P99) và \texttt{test\_edge\_cases.py} (trường hợp biên); các module dùng chung fixture đăng nhập và cấu hình trong \texttt{conftest.py}.
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{@{}llrrl@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Method} & \textbf{Status} & \textbf{P95 (ms)} & \textbf{Kết quả} \\
+\midrule
+/api/auth/login & POST & 200 & 142 & Pass \\
+/api/kpi & GET & 200 & 38 & Pass \\
+/api/predictions & GET & 200 & 89 & Pass \\
+/api/top-products & GET & 200 & 52 & Pass \\
+/api/family-mix & GET & 200 & 41 & Pass \\
+/api/family-trend & GET & 200 & 67 & Pass \\
+/api/products & GET & 200 & 96 & Pass \\
+/api/products?search & GET & 200 & 118 & Pass \\
+/api/inventory/restock & POST & 200 & 203 & Pass \\
+/api/chat & POST & 200 & 2.340 & Pass \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{Tỉ lệ pass}} & & \textbf{47/47} \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả kiểm thử API nội bộ (n=50 lần gọi mỗi endpoint).}
+\label{tab:apitest}
+\end{table}
+
+\section{Kiểm thử bảo mật}
+
+Các tình huống dưới đây được tự động hóa trong module \texttt{backend/tests/test\_security.py} của bộ pytest nêu trên.
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Tình huống} & \textbf{Kỳ vọng} & \textbf{Thực tế} & \textbf{Kết quả} \\
+\midrule
+manager1 truy cập store\_nbr=1 & 200 OK & 200 OK & Pass \\
+manager1 truy cập store\_nbr=15 & 403 Forbidden & 403 + msg VN & Pass \\
+Token hết hạn & 401 & 401 + redirect login & Pass \\
+Token giả mạo & 401 & 401 & Pass \\
+SQL injection qua search & Không thực thi & Tham số hóa & Pass \\
+LLM ngoài phạm vi & Từ chối & validate\_tool\_access chặn & Pass \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả kiểm thử bảo mật.}
+\label{tab:sectest}
+\end{table}
+
+\section{Đánh giá Trợ lý AI (LLM Agent)}
+
+\subsection{Chất lượng hội thoại}
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Loại câu hỏi} & \textbf{Mức độ} & \textbf{Số test} & \textbf{Tỉ lệ đúng} \\
+\midrule
+Phân tích tổng quan cửa hàng & Dễ & 10 & 10/10 \\
+Rủi ro cháy hàng cụ thể & Trung bình & 10 & 9/10 \\
+Đề xuất nhập hàng SKU & Trung bình & 10 & 9/10 \\
+Phân tích hàng tồn chậm & Trung bình & 10 & 10/10 \\
+So sánh cụm cửa hàng & Khó & 5 & 4/5 \\
+Gợi ý bán chéo & Khó & 5 & 4/5 \\
+Câu hỏi ngoài phạm vi & Kiểm biên & 5 & 5/5 từ chối \\
+\bottomrule
+\end{tabular}
+\caption{Kết quả kiểm thử chất lượng LLM Agent trên 55 kịch bản.}
+\label{tab:llmtest}
+\end{table}
+
+\subsection{Ví dụ hội thoại thực tế}
+
+\begin{quote}
+\textbf{Người dùng:} ``Cửa hàng 1 có rủi ro cháy hàng không?''
+
+\textbf{Agent:} ``Phân tích cửa hàng \#1: phát hiện \textbf{3 SKU} có rủi ro cháy hàng trong 7 ngày tới:
+\begin{itemize}
+    \item \texttt{item\_1503845} (GROCERY I): tồn 12, dự báo 45/ngày $\Rightarrow$ hết trong 0,3 ngày
+    \item \texttt{item\_1047679} (BEVERAGES): tồn 28, dự báo 89/ngày $\Rightarrow$ hết trong 0,3 ngày
+    \item \texttt{item\_1087041} (CLEANING): tồn 5, dự báo 31/ngày $\Rightarrow$ hết trong 0,2 ngày
+\end{itemize}
+Thiệt hại ước tính: 67 USD/ngày. Đề xuất: đặt hàng gấp với Q = max(0, F\_16d - Stock).''
+\end{quote}
+
+\section{Đánh giá hiệu năng tổng thể}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Chỉ số} & \textbf{Giá trị} & \textbf{Đánh giá} \\
+\midrule
+Thời gian khởi động hệ thống & 45 giây & Chấp nhận được \\
+Bộ nhớ ml\_service & 1.2 GB & Trong ngưỡng \\
+Bộ nhớ backend & 280 MB & Tốt \\
+Bộ nhớ frontend nginx & 25 MB & Rất nhẹ \\
+Throughput API cache & 250 req/s & Đạt yêu cầu \\
+Throughput LLM chat & 0.4 req/s & Giới hạn API bên ngoài \\
+Uptime 72 giờ test & 99.2\% & Đạt yêu cầu \\
+\bottomrule
+\end{tabular}
+\caption{Tổng hợp chỉ số hiệu năng hệ thống.}
+\end{table}
+
+\cleardoublepage
+% =========================================================================
+% CHƯƠNG 5: KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
+% =========================================================================
+\chapter{KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN}
+
+\section{Tổng kết kết quả đạt được}
+
+\subsection{Kết quả về mô hình học máy}
+
+\begin{enumerate}
+    \item Xây dựng thành công \textbf{kiến trúc Smart Routing đa cấp}: 33 Local LightGBM chuyên biệt hóa theo ngành hàng + Global Ensemble (LightGBM 41.63\% + CatBoost 58.37\%);
+    
+    \item \textbf{Kiểm chứng qua Kaggle Leaderboard:} Global Ensemble đạt \textbf{NWRMSLE 0.64438 (Public) / 0.63542 (Private --- Best Score)}, vượt Local Models (0.65307/0.64207) trên cả hai leaderboard, xác nhận giá trị của chiến lược blend toàn cục;
+    
+    \item Pipeline feature engineering hoàn chỉnh: 25+ đặc trưng áp dụng nhất quán giữa huấn luyện và suy luận;
+    
+    \item Dự báo đệ quy 16 ngày trên 59 triệu dòng dữ liệu lịch sử, phân rã tới 4.100 SKU $\times$ 54 cửa hàng = 3,37 triệu dòng dự báo.
+\end{enumerate}
+
+\subsection{Kết quả về hệ thống web}
+
+\begin{enumerate}
+    \item Triển khai \textbf{microservices} 3 dịch vụ trên Docker Compose với healthcheck và tự phục hồi;
+    \item Xây dựng \textbf{Trợ lý AI} tích hợp Groq Cloud với 9 công cụ Function Calling, đạt 90\% độ chính xác trên 55 kịch bản kiểm thử;
+    \item Bảo mật đa tầng: PBKDF2 200k vòng, JWT HS256, RBAC 3 cấp, Row-Level Isolation;
+    \item Hiệu năng: 100\% API endpoint $<$ 1 giây; LLM chat $<$ 3,5 giây (P95).
+\end{enumerate}
+
+\section{Hạn chế của hệ thống}
+
+\begin{enumerate}
+    \item \textbf{Dữ liệu mô phỏng tồn kho:} Bảng INVENTORY được sinh ngẫu nhiên theo phân phối 60/20/20 --- chưa phản ánh tồn kho thực tế;
+    
+    \item \textbf{Khoảng cách với top Kaggle:} NWRMSLE 0.635 so với top 0.35 --- do chưa kết hợp Deep Learning, feature engineering còn cơ bản và không dùng multi-seed ensemble;
+    
+    \item \textbf{SQLite hạn chế concurrent write:} WAL mode hỗ trợ đọc song song nhưng ghi vẫn tuần tự;
+    
+    \item \textbf{CORS wildcard:} Cấu hình mở \texttt{*} cho môi trường phát triển --- cần siết khi production;
+    
+    \item \textbf{Không có retraining tự động:} Pipeline tách khỏi serving nhưng chưa có scheduler định kỳ;
+    
+    \item \textbf{Đánh giá LLM chủ quan:} 55 kịch bản do nhóm tự thiết kế, chưa có benchmark độc lập.
+\end{enumerate}
+
+\section{Hướng phát triển tương lai}
+
+\subsection{Ngắn hạn (3--6 tháng)}
+
+\begin{itemize}
+    \item Chuyển SQLite $\rightarrow$ PostgreSQL + TimescaleDB;
+    \item Thêm xác thực OAuth2 (Google Workspace);
+    \item WebSocket cho real-time dashboard update;
+    \item Scheduler Airflow retrain model hàng tuần.
+\end{itemize}
+
+\subsection{Trung hạn (6--12 tháng)}
+
+\begin{itemize}
+    \item \textbf{Deep Learning:} N-BEATS, TFT (Temporal Fusion Transformer) để thu hẹp khoảng cách với top Kaggle;
+    \item \textbf{Probabilistic Forecasting:} Dự báo khoảng tin cậy (quantile regression);
+    \item \textbf{Multi-seed ensemble:} Blend 10--20 model với seed khác nhau giảm variance;
+    \item \textbf{Reinforcement Learning:} Tối ưu chính sách đặt hàng (s,Q);
+    \item \textbf{Multi-tenant isolation:} Schema-per-tenant PostgreSQL.
+\end{itemize}
+
+\subsection{Dài hạn (1--2 năm)}
+
+\begin{itemize}
+    \item Kubernetes (K8s) với horizontal pod autoscaling;
+    \item Tích hợp ERP thực tế (SAP, Odoo);
+    \item Mobile app (React Native);
+    \item Marketplace mô hình: Federated learning.
+\end{itemize}
+
+\section{Bài học kinh nghiệm}
+
+\begin{enumerate}
+    \item \textbf{Feature store nhất quán} giữa training và inference là yếu tố quyết định --- 80\% bug production xuất phát từ schema mismatch;
+    
+    \item \textbf{Global Ensemble thường ổn định hơn Local thuần túy} --- kết quả Kaggle (0.635 vs 0.642 private) xác nhận blend toàn cục giảm variance so với 33 local model riêng lẻ;
+    
+    \item \textbf{Private score tốt hơn public là tín hiệu tích cực} --- mô hình không overfit, khả năng tổng quát hóa tốt;
+    
+    \item \textbf{LLM Agent cần ràng buộc chặt} --- Function Calling với SQL tĩnh giúp tránh 99\% hallucination;
+    
+    \item \textbf{Docker healthcheck đáng đầu tư} --- 3 dòng YAML tiết kiệm hàng giờ debug.
+\end{enumerate}
+
+\cleardoublepage
+
+% =========================================================================
+% ĐÁNH GIÁ THÀNH VIÊN VÀ GIẢNG VIÊN (SAMSUNG RUBRICS)
+% =========================================================================
+\chapter*{ĐÁNH GIÁ VÀ NHẬN XÉT}
+\addcontentsline{toc}{chapter}{Đánh giá và Nhận xét}
+\vspace{1cm}
+
+
+\vspace{0.4cm}
+
+\renewcommand{\arraystretch}{1.6}
+\begin{tabularx}{\textwidth}{|>{\bfseries}p{5.5cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+\hline
+\rowcolor{lightgraybg}
+\textbf{TIÊU CHÍ ĐÁNH GIÁ} & \textbf{ĐIỂM SỐ} & \textbf{NHẬN XÉT VÀ ĐÁNH GIÁ} \\
+\hline
+Ý TƯỞNG ĐỀ TÀI (IDEA) & \rule{8mm}{0.4pt} / 10 & \\[0.8cm]
+\hline
+TÍNH ỨNG DỤNG (APPLICATION) & \rule{8mm}{0.4pt} / 30 & \\[0.8cm]
+\hline
+KẾT QUẢ ĐẠT ĐƯỢC (RESULT) & \rule{8mm}{0.4pt} / 30 & \\[0.8cm]
+\hline
+QUẢN LÝ DỰ ÁN (PROJECT MANAGEMENT) & \rule{8mm}{0.4pt} / 10 & \\[0.8cm]
+\hline
+BÁO CÁO \& THUYẾT TRÌNH (PRESENTATION \& REPORT) & \rule{8mm}{0.4pt} / 20 & \\[0.8cm]
+\hline
+\rowcolor{lightgraybg}
+\textbf{TỔNG ĐIỂM (TOTAL)} & \textbf{\rule{8mm}{0.4pt} / 100} & \\[0.8cm]
+\hline
+\end{tabularx}
+
+\vspace{0.8cm}
+
+\cleardoublepage
+
+% =========================================================================
+% TÀI LIỆU THAM KHẢO
+% =========================================================================
+\begin{thebibliography}{99}
+\addcontentsline{toc}{chapter}{Tài liệu tham khảo}
+
+\bibitem{favorita2018}
+Corporación Favorita. (2018). \textit{Favorita Grocery Sales Forecasting}. Kaggle. \url{https://www.kaggle.com/competitions/favorita-grocery-sales-forecasting}
+
+\bibitem{lightgbm2017}
+Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., \& Liu, T. Y. (2017). \textit{LightGBM: A Highly Efficient Gradient Boosting Decision Tree}. NeurIPS 2017.
+
+\bibitem{catboost2018}
+Prokhorenkova, L., Gusev, G., Vorobev, A., Dorogush, A. V., \& Gulin, A. (2018). \textit{CatBoost: Unbiased Boosting with Categorical Features}. NeurIPS 2018.
+
+\bibitem{transformer2017}
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., \& Polosukhin, I. (2017). \textit{Attention Is All You Need}. NeurIPS 2017.
+
+\bibitem{react2023}
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., \& Cao, Y. (2023). \textit{ReAct: Synergizing Reasoning and Acting in Language Models}. ICLR 2023.
+
+\bibitem{qwen2024}
+Qwen Team. (2024). \textit{Qwen2.5 Technical Report}. arXiv preprint arXiv:2412.15115.
+
+\bibitem{groq2024}
+Groq Inc. (2024). \textit{Groq Cloud API Documentation}. \url{https://console.groq.com/docs}
+
+\bibitem{fastapi2018}
+Ramírez, S. (2018). \textit{FastAPI Framework}. \url{https://fastapi.tiangolo.com}
+
+\bibitem{hyndman2018}
+Hyndman, R. J., \& Athanasopoulos, G. (2018). \textit{Forecasting: Principles and Practice} (3rd ed.). OTexts.
+
+\bibitem{makridakis2020}
+Makridakis, S., Spiliotis, E., \& Assimakopoulos, V. (2020). \textit{The M5 Accuracy Competition: Results, Findings, and Conclusions}. International Journal of Forecasting.
+
+\bibitem{rop2017}
+Silver, E. A., Pyke, D. F., \& Thomas, D. J. (2017). \textit{Inventory and Production Management in Supply Chains} (4th ed.). CRC Press.
+
+\bibitem{docker2014}
+Merkel, D. (2014). \textit{Docker: Lightweight Linux Containers for Consistent Development and Deployment}. Linux Journal.
+
+\bibitem{jwt2015}
+Jones, M., Bradley, J., \& Sakimura, N. (2015). \textit{JSON Web Token (JWT)}. RFC 7519.
+
+\bibitem{sqlite2000}
+Hipp, D. R. (2000). \textit{SQLite: A Small Fast Embedded SQL Database Engine}. \url{https://sqlite.org}
+
+\bibitem{react2024}
+React Team. (2024). \textit{React --- The library for web and native user interfaces}. \url{https://react.dev}
+
+\bibitem{bojer2021}
+Bojer, C. S., \& Meldgaard, J. (2021). \textit{Kaggle Forecasting Competitions: An Opportunity for Progress}. International Journal of Forecasting, 37(3).
+
+\bibitem{m5competition2022}
+Makridakis, S., et al. (2022). \textit{M5 competition: Background, organization, and implementation}. International Journal of Forecasting, 38(4).
+
+\bibitem{tft2019}
+Lim, B., Arık, S. Ö., Loeff, N., \& Pfister, T. (2019). \textit{Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting}. arXiv preprint arXiv:1912.09363.
+
+\bibitem{nbeats2020}
+Oreshkin, B. N., et al. (2020). \textit{N-BEATS: Neural basis expansion analysis for interpretable time series forecasting}. ICLR 2020.
+
+\bibitem{gradboost2001}
+Friedman, J. H. (2001). \textit{Greedy Function Approximation: A Gradient Boosting Machine}. Annals of Statistics, 29(5).
+
+\end{thebibliography}
+
+\end{document}

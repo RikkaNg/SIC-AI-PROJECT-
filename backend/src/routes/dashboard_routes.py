@@ -7,8 +7,8 @@ API cho Dashboard React (App.tsx) - CÓ Row-Level Isolation:
        date_from / date_to (YYYY-MM-DD) để cắt khoảng thời gian.
 - GET /api/kpi                    -> {total_predicted_sales, avg_per_day, forecast_days}
        Cùng bộ tham số tùy chọn như /predictions.
-- GET /api/forecast-meta          -> {date_from, date_to} biên thời gian của dữ liệu dự báo
-       (theo phạm vi user + family nếu truyền) để frontend giới hạn ô chọn ngày.
+- GET /api/forecast-meta          -> {date_from, date_to, days_behind, is_stale} biên thời gian
+       của dữ liệu dự báo (theo phạm vi user + family nếu truyền) + cờ cảnh báo stale.
 
 Mọi query đều filter theo Identity.allowed_stores (admin/ERP = toàn hệ thống).
 Đọc trực tiếp SQLite retail.db ở chế độ read-only, không cần pandas.
@@ -16,6 +16,7 @@ Mọi query đều filter theo Identity.allowed_stores (admin/ERP = toàn hệ t
 import os
 import sqlite3
 import logging
+from datetime import date
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -91,7 +92,8 @@ def list_stores(user: Identity = Depends(get_current_user)) -> List[int]:
         raise
     except Exception as e:
         logger.error(f"Error in list_stores: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -124,7 +126,8 @@ def get_predictions(store_nbr: Optional[int] = Query(default=None),
         raise
     except Exception as e:
         logger.error(f"Error in get_predictions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -162,7 +165,8 @@ def get_kpi(store_nbr: Optional[int] = Query(default=None),
         raise
     except Exception as e:
         logger.error(f"Error in get_kpi: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()
@@ -173,7 +177,12 @@ def get_forecast_meta(store_nbr: Optional[int] = Query(default=None),
                       family: Optional[str] = Query(default=None),
                       user: Identity = Depends(get_current_user)) -> dict:
     """Biên thời gian (MIN/MAX date) của dữ liệu dự báo trong phạm vi user,
-    dùng để giới hạn ô chọn 'Từ ngày/Đến ngày' phía frontend."""
+    dùng để giới hạn ô chọn 'Từ ngày/Đến ngày' phía frontend.
+
+    Trả kèm cờ freshness (§3.4): bảng forecasts là precomputed nên khi cửa sổ
+    dự báo không còn phủ ngày hiện tại, is_stale=True để frontend cảnh báo
+    'dự báo chưa cập nhật' (cần chạy lại pipeline retrain).
+    """
     join_sql, where, params = _build_forecast_filters(user, store_nbr, family, None, None)
     conn = None
     try:
@@ -186,12 +195,24 @@ def get_forecast_meta(store_nbr: Optional[int] = Query(default=None),
         row = conn.execute(query, params).fetchone()
         if row is None or not row["date_from"]:
             raise HTTPException(status_code=404, detail="Không có dữ liệu dự báo.")
-        return {"date_from": row["date_from"], "date_to": row["date_to"]}
+        days_behind = None
+        try:
+            date_to = date.fromisoformat(str(row["date_to"])[:10])
+            days_behind = max(0, (date.today() - date_to).days)
+        except ValueError:
+            pass
+        return {
+            "date_from": row["date_from"],
+            "date_to": row["date_to"],
+            "days_behind": days_behind,
+            "is_stale": bool(days_behind),
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in get_forecast_meta: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500,
+                            detail="Lỗi hệ thống khi truy vấn dữ liệu. Vui lòng thử lại sau.")
     finally:
         if conn:
             conn.close()

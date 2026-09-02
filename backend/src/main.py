@@ -1,9 +1,21 @@
 # backend/src/main.py
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.src.routes import chat_routes, forecast_routes, inventory_routes, dashboard_routes, auth_routes, product_routes
+from backend.src.routes import chat_routes, forecast_routes, inventory_routes, dashboard_routes, auth_routes, product_routes, scenario_routes
+from backend.src.services.ml_client import init_ml_client, close_ml_client
 
-app = FastAPI(title="Retail API Gateway", version="1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Connection pool dùng chung cho mọi lời gọi ML Service (§4.1)
+    init_ml_client()
+    yield
+    await close_ml_client()
+
+
+app = FastAPI(title="Retail API Gateway", version="1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,6 +32,7 @@ app.include_router(forecast_routes.router, prefix="/api", tags=["Forecasting"])
 app.include_router(inventory_routes.router, prefix="/api", tags=["Inventory"])
 app.include_router(dashboard_routes.router, prefix="/api", tags=["Dashboard"])
 app.include_router(product_routes.router, prefix="/api", tags=["Products"])
+app.include_router(scenario_routes.router, prefix="/api", tags=["Scenario Lab"])
 
 @app.get("/")
 def health_check():

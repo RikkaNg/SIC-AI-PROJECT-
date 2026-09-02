@@ -1,0 +1,28 @@
+# ============================================================
+# Cau hinh LLM cho SIC-AI-PROJECT - khong commit len Git
+# Ho so DANG DUNG: ORCAROUTER (OpenAI-compatible)
+# Lay key tai dashboard cua OrcaRouter (key dang: sk-...)
+# SAU KHI DAN KEY: restart Backend terminal (:8000)
+# ============================================================
+
+# ---------------- ORCAROUTER - DANG DUNG ----------------
+GROQ_API_KEY=
+GROQ_BASE_URL=https://api.orcarouter.ai/v1
+LLM_MODEL_NAME=orcarouter/auto
+
+# Cac model khac tren OrcaRouter (neu goi co ban): thay dong LLM_MODEL_NAME ben tren
+# Danh sach xem trong dashboard/docs cua ho.
+
+# ---------------- GROQ - du phong (comment khi dung OrcaRouter) ----------------
+# GROQ_API_KEY=
+# LLM_MODEL_NAME=qwen/qwen3.6-27b
+
+# ---------------- Tuy chon chung ----------------
+# De trong = khong gui reasoning_effort (AN TOAN VOI MOI MODEL)
+LLM_REASONING_EFFORT=
+
+# ---- Ngan sach ngu canh hoi thoai (backend tu trim theo token) ----
+# Mac dinh an toan cho goi free Groq TPM 8K; nang tier thi tang token budget.
+LLM_HISTORY_TOKEN_BUDGET=1200
+LLM_HISTORY_MAX_MESSAGES=40
+LLM_HISTORY_MAX_CHARS_PER_MSG=4000
