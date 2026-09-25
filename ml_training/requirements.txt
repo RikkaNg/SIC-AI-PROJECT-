@@ -79,3 +79,4 @@ wcwidth==0.8.2
 wrapt==2.2.2
 xgboost==3.3.0
 zipp==4.1.0
+optuna==5.0.0

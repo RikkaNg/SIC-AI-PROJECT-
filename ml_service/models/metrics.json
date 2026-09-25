@@ -1,25 +1,152 @@
 {
-  "avg_rmsle": 0.35976466025770154,
-  "avg_mae": 76.72998902125856,
-  "avg_best_iteration": 2364,
   "folds": [
     {
-      "rmsle": 0.3607856291358266,
-      "mae": 76.69393134022943,
-      "best_iteration": 2169,
-      "fold": 1
+      "fold": 1,
+      "blend_weight_lgbm": 0.698,
+      "lgbm_best_iter": 2382,
+      "lgbm_rmsle": 0.35557,
+      "lgbm_mae": 75.6169,
+      "lgbm_rmse": 277.6224,
+      "lgbm_mape": 33.32,
+      "lgbm_wape": 13.21,
+      "lgbm_wmape": 13.21,
+      "lgbm_r2": 0.9649,
+      "catboost_best_iter": 3000,
+      "catboost_rmsle": 0.35813,
+      "catboost_mae": 77.0669,
+      "catboost_rmse": 284.6216,
+      "catboost_mape": 32.87,
+      "catboost_wape": 13.46,
+      "catboost_wmape": 13.46,
+      "catboost_r2": 0.9631,
+      "blend_rmsle": 0.35503,
+      "blend_mae": 75.3758,
+      "blend_rmse": 277.5705,
+      "blend_mape": 33.07,
+      "blend_wape": 13.16,
+      "blend_wmape": 13.16,
+      "blend_r2": 0.9649
     },
     {
-      "rmsle": 0.3477091925265726,
-      "mae": 70.66950961115508,
-      "best_iteration": 2225,
-      "fold": 2
+      "fold": 2,
+      "blend_weight_lgbm": 0.681,
+      "lgbm_best_iter": 1992,
+      "lgbm_rmsle": 0.34312,
+      "lgbm_mae": 67.3065,
+      "lgbm_rmse": 249.1699,
+      "lgbm_mape": 31.63,
+      "lgbm_wape": 12.08,
+      "lgbm_wmape": 12.08,
+      "lgbm_r2": 0.969,
+      "catboost_best_iter": 1648,
+      "catboost_rmsle": 0.34507,
+      "catboost_mae": 69.3445,
+      "catboost_rmse": 256.7479,
+      "catboost_mape": 31.45,
+      "catboost_wape": 12.45,
+      "catboost_wmape": 12.45,
+      "catboost_r2": 0.9671,
+      "blend_rmsle": 0.34258,
+      "blend_mae": 67.1476,
+      "blend_rmse": 249.3583,
+      "blend_mape": 31.46,
+      "blend_wape": 12.06,
+      "blend_wmape": 12.06,
+      "blend_r2": 0.969
     },
     {
-      "rmsle": 0.37079915911070543,
-      "mae": 82.82652611239118,
-      "best_iteration": 2700,
-      "fold": 3
+      "fold": 3,
+      "blend_weight_lgbm": 0.9741,
+      "lgbm_best_iter": 2043,
+      "lgbm_rmsle": 0.36621,
+      "lgbm_mae": 78.6669,
+      "lgbm_rmse": 254.1106,
+      "lgbm_mape": 34.04,
+      "lgbm_wape": 14.28,
+      "lgbm_wmape": 14.28,
+      "lgbm_r2": 0.9651,
+      "catboost_best_iter": 1370,
+      "catboost_rmsle": 0.37268,
+      "catboost_mae": 86.9444,
+      "catboost_rmse": 290.4385,
+      "catboost_mape": 34.61,
+      "catboost_wape": 15.78,
+      "catboost_wmape": 15.78,
+      "catboost_r2": 0.9544,
+      "blend_rmsle": 0.36621,
+      "blend_mae": 78.7928,
+      "blend_rmse": 254.6774,
+      "blend_mape": 34.04,
+      "blend_wape": 14.3,
+      "blend_wmape": 14.3,
+      "blend_r2": 0.9649
     }
-  ]
+  ],
+  "mean": {
+    "lgbm": {
+      "rmsle": 0.355,
+      "mae": 73.8634,
+      "rmse": 260.301,
+      "mape": 32.9967,
+      "wape": 13.19,
+      "wmape": 13.19,
+      "r2": 0.9663
+    },
+    "catboost": {
+      "rmsle": 0.3586,
+      "mae": 77.7853,
+      "rmse": 277.2693,
+      "mape": 32.9767,
+      "wape": 13.8967,
+      "wmape": 13.8967,
+      "r2": 0.9615
+    },
+    "blend": {
+      "rmsle": 0.3546,
+      "mae": 73.7721,
+      "rmse": 260.5354,
+      "mape": 32.8567,
+      "wape": 13.1733,
+      "wmape": 13.1733,
+      "r2": 0.9663
+    }
+  },
+  "std": {
+    "lgbm": {
+      "rmsle": 0.0094,
+      "mae": 4.8007,
+      "rmse": 12.4131,
+      "mape": 1.0101,
+      "wape": 0.8983,
+      "wmape": 0.8983,
+      "r2": 0.0019
+    },
+    "catboost": {
+      "rmsle": 0.0113,
+      "mae": 7.2031,
+      "rmse": 14.7039,
+      "mape": 1.2923,
+      "wape": 1.3941,
+      "wmape": 1.3941,
+      "r2": 0.0053
+    },
+    "blend": {
+      "rmsle": 0.0097,
+      "mae": 4.8875,
+      "rmse": 12.2398,
+      "mape": 1.064,
+      "wape": 0.9145,
+      "wmape": 0.9145,
+      "r2": 0.0019
+    }
+  },
+  "metric_definitions": {
+    "mae": "mean|y - yhat|",
+    "rmse": "sqrt(mean((y - yhat)^2))",
+    "rmsle": "sqrt(mean((log1p(yhat) - log1p(y))^2))",
+    "mape": "mean(|e|/y) * 100 — chỉ tính trên y > 0 (%)",
+    "wape": "sum|e| / sum(y) * 100 (%)",
+    "wmape": "weighted MAPE (trọng số w = y) ≡ WAPE theo chuẩn (%)",
+    "r2": "1 - SS_res / SS_tot"
+  }
 }

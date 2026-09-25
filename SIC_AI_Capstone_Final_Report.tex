@@ -47,18 +47,18 @@
   {\colorbox{samsungblue}{\parbox{\dimexpr\textwidth-2\fboxsep\relax}{\vspace{4pt}\color{white}\Large\strut CHƯƠNG \thechapter\strut\vspace{4pt}}}}
   {10pt}
   {\Huge\color{samsungblue}}
-\titlespacing*{\chapter}{0pt}{-10pt}{20pt}
+\titlespacing*{\chapter}{0pt}{-8pt}{14pt}
 
 \titleformat{\section}
   {\normalfont\Large\bfseries\color{samsungblue}}
   {\thesection}{0.8em}{}
   [\vspace{2pt}\color{samsungblue!40}\titlerule]
-\titlespacing*{\section}{0pt}{16pt}{10pt}
+\titlespacing*{\section}{0pt}{12pt}{8pt}
 
 \titleformat{\subsection}
   {\normalfont\large\bfseries\color{samsungdark}}
   {\thesubsection}{0.6em}{}
-\titlespacing*{\subsection}{0pt}{12pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{5pt}
 
 \titleformat{\subsubsection}
   {\normalfont\normalsize\bfseries\color{samsungblue!80!black}}
@@ -72,15 +72,26 @@
 \fancyfoot[L]{\scriptsize\textcolor{gray}{\textcopyright 2023 SAMSUNG. All rights reserved.}}
 \fancyfoot[R]{\small\textcolor{samsungblue}{\textbf{\thepage}}}
 \renewcommand{\headrulewidth}{0.5pt}
+% Header phải chỉ hiện "Chương N" để không chồng lên header trái ở các chương có tiêu đề dài
+\renewcommand{\chaptermark}[1]{\markboth{Chương \thechapter}{}}
 \renewcommand{\footrulewidth}{0.3pt}
 
 % --- Tùy chỉnh tên tiếng Việt ---
-\linespread{1.25}
+\linespread{1.21}
 \renewcommand{\contentsname}{Mục lục}
 \renewcommand{\figurename}{Hình}
 \renewcommand{\tablename}{Bảng}
 \renewcommand{\bibname}{Tài liệu tham khảo}
-\setlength{\parskip}{4pt}
+\setlength{\parskip}{3pt}
+
+% Nén khoảng trắng danh sách và công thức (không đổi cỡ chữ)
+\setlist{itemsep=2pt, topsep=4pt, parsep=0pt}
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{5pt plus 2pt minus 2pt}%
+  \setlength{\belowdisplayskip}{5pt plus 2pt minus 2pt}%
+  \setlength{\abovedisplayshortskip}{3pt plus 1pt}%
+  \setlength{\belowdisplayshortskip}{3pt plus 1pt}%
+}
 
 \begin{document}
 \selectlanguage{vietnamese}
@@ -461,11 +472,60 @@ Nhạy với sai số lớn, giám sát ngành hàng tốc độ bán cao (GROCE
     \mathrm{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n} (\hat{y}_i - y_i)^2}
 \]
 
+\subsubsection{MAPE (Mean Absolute Percentage Error)}
+Chỉ số đo sai số dự báo theo phần trăm so với giá trị thực tế:
+\[
+    \mathrm{MAPE} = \frac{1}{n}\sum_{i=1}^{n} \left|\frac{y_i - \hat{y}_i}{y_i}\right| \times 100\%
+\]
+
+Hạn chế: MAPE không xác định khi tồn tại $y_i = 0$ --- rất phổ biến trong dữ liệu bán lẻ
+theo ngày --- và phạt bất đối xứng, nặng hơn khi $y_i$ nhỏ, khiến chỉ số bị lệch bởi các
+quan sát có giá trị thực tế gần 0.
+
 \subsubsection{WAPE (Weighted Absolute Percentage Error)}
-Thay thế hoàn hảo cho MAPE, khắc phục lỗi chia cho $y_i = 0$ của các ngày nhu cầu bằng 0: 
+Từ hạn chế của MAPE nêu trên, WAPE được đề xuất như một giải pháp thay thế, khắc phục
+lỗi chia cho $y_i = 0$ bằng cách chuẩn hoá tổng sai số tuyệt đối theo tổng giá trị thực
+tế thay vì theo từng quan sát riêng lẻ:
 \[
     \mathrm{WAPE} = \frac{\sum_{i=1}^{n} |\hat{y}_i - y_i|}{\sum_{i=1}^{n} y_i}
 \]
+Đây là chỉ số được ưu tiên trình bày trong báo cáo cho người dùng cuối (chủ cửa hàng)
+trên nền tảng, vì thể hiện sai số dưới dạng phần trăm dễ hiểu so với tổng doanh số thực
+tế, thay vì đơn vị log như RMSLE.
+
+\subsubsection{WMAPE (Weighted Mean Absolute Percentage Error)}
+Phiên bản có trọng số của WAPE, kế thừa tinh thần weighting của NWRMSLE: hàng dễ hỏng
+(\textit{perishable}) được nhân trọng số $w_i = 1{,}5$ vì rủi ro đứt hàng của nhóm này
+cao hơn, khiến sai số ở nhóm ``xấu'' bị phạt nặng hơn trong tổng thể:
+\[
+    \mathrm{WMAPE} = \frac{\displaystyle\sum_{i=1}^{n} w_i\,|\hat{y}_i - y_i|}
+                         {\displaystyle\sum_{i=1}^{n} w_i\,|y_i|}, \quad
+    w_i = \begin{cases} 1.5 & \text{nếu sản phẩm dễ hỏng} \\ 1.0 & \text{ngược lại} \end{cases}
+\]
+Khi $w_i = 1$ với mọi quan sát, WMAPE trùng khít với WAPE --- nhờ đó hai chỉ số luôn có
+thể so sánh trực tiếp: WMAPE thấp hơn WAPE cho thấy mô hình đạt sai số tương đối thấp
+hơn chính ở nhóm hàng có trọng số cao (nhóm quan trọng nhất về độ tươi hàng hóa).
+
+\subsubsection{Forecast Accuracy (Accuracy classification score)}
+Chỉ số mang ý nghĩa ``tỷ lệ dự đoán đúng'' của bài toán phân loại, quy đổi từ WAPE:
+\[
+\text{Forecast Accuracy} = \max\left(0, 1 - \text{WAPE}\right) = \max\left(0, 1 - \frac{\displaystyle\sum_{i=1}^{n} |y_i - \hat{y}_i|}{\displaystyle\sum_{i=1}^{n} y_i}\right)
+\]
+Đây là chỉ số của bài toán phân loại, không phù hợp áp dụng trực tiếp cho bài toán hồi
+quy dự báo doanh số liên tục như trong đề tài, do đó không được dùng làm chỉ số đánh
+giá chính.
+
+\subsubsection{ $R^2$ (Coefficient of determination) regression score function.}
+
+Thông thường, giá trị $R^2$ nằm trong khoảng $[0, 1]$ đối với tập huấn luyện, nhưng trên tập kiểm thử (test set) giá trị này có thể nhận giá trị âm ($(-\infty, 1]$).
+
+Hệ số xác định tổng quát được định nghĩa theo công thức:
+\[
+    R^2 = 1 - \frac{RSS}{TSS} = 1 - \frac{\displaystyle\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{\displaystyle\sum_{i=1}^{n} (y_i - \bar{y})^2}
+\]
+Trong hệ thống, $R^2$ được dùng như chỉ số tham chiếu bổ sung để đánh giá mức độ mô
+hình giải thích được biến động doanh số tổng thể, đặc biệt hữu ích khi so sánh giữa
+các fold walk-forward có quy mô dữ liệu huấn luyện khác nhau.
 
 \section{Nền tảng web và kiến trúc hệ thống hỗ trợ ra quyết định}
 \subsection{Hệ thống hỗ trợ ra quyết định (DSS)}
@@ -486,6 +546,15 @@ Hệ thống hỗ trợ ra quyết định giúp nhà quản lý tổng hợp, p
 \end{itemize}
 
 \section{Tổng quan tập dữ liệu Favorita Grocery Sales Forecasting}
+
+Các cửa hàng tạp hóa truyền thống luôn phải cân nhắc kỹ lưỡng giữa việc mua hàng và dự báo doanh số. Nếu dự đoán cao hơn một chút, các cửa hàng sẽ bị tồn kho hàng hóa dễ hư hỏng. Nếu dự đoán thấp hơn một chút, các mặt hàng phổ biến sẽ nhanh chóng bán hết, dẫn đến mất doanh thu và khách hàng tức giận.
+
+Vấn đề trở nên phức tạp hơn khi các nhà bán lẻ mở thêm địa điểm mới với những nhu cầu riêng biệt, sản phẩm mới, thị hiếu theo mùa luôn thay đổi và tiếp thị sản phẩm khó lường. Corporación Favorita , một nhà bán lẻ tạp hóa lớn có trụ sở tại Ecuador, hiểu rõ điều này hơn ai hết. Họ điều hành hàng trăm siêu thị, với hơn 200.000 sản phẩm khác nhau trên kệ.
+
+Công ty Corporación Favorita đã thách thức cộng đồng Kaggle xây dựng một mô hình dự báo doanh số sản phẩm chính xác hơn. Hiện tại, họ đang dựa vào các phương pháp dự báo chủ quan với rất ít dữ liệu hỗ trợ và rất ít tự động hóa để thực hiện kế hoạch. Họ rất hào hứng muốn xem máy học có thể giúp họ đảm bảo làm hài lòng khách hàng tốt hơn bằng cách cung cấp đủ lượng sản phẩm phù hợp vào đúng thời điểm như thế nào.
+
+
+
 Tập dữ liệu do Corporación Favorita (Ecuador) công bố trên Kaggle gồm: 
 
 \begin{table}[h!]
@@ -533,7 +602,7 @@ Qua khảo sát vận hành, doanh nghiệp bán lẻ vừa và nhỏ đối di�
 Hệ thống thiết kế theo mô hình B2B SaaS, phân ba cấp người dùng theo RBAC:
 
 \newpage
-\begin{table}[!h]
+\begin{table}[H]
 \centering
 \begin{tabular}{@{}lp{5cm}p{5cm}@{}}
 \toprule
@@ -1225,23 +1294,142 @@ docker compose up -d --force-recreate backend
 
 \subsection{Global Ensemble --- Kiểm định Walk-Forward}
 
+Bộ chỉ số đầy đủ (MAE, RMSE, WAPE, WMAPE, $R^2$, kèm RMSLE để đối chiếu) được tính bởi
+script chuyên biệt \texttt{evaluate\_metrics.py} với giao thức walk-forward 3 fold, mỗi
+fold validation 28 ngày (cùng điểm cắt với quá trình huấn luyện), blend LightGBM +
+CatBoost thực hiện trong không gian log; toàn bộ số liệu lưu tại
+\texttt{ml\_training/models/evaluation\_metrics.json}.
+
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{@{}cccccc@{}}
+\begin{tabular}{@{}lccccccc@{}}
 \toprule
-\textbf{Fold} & \textbf{LGBM RMSLE} & \textbf{CatBoost RMSLE} & $w_{\mathrm{LGBM}}$ & \textbf{Blend RMSLE} & \textbf{Blend MAE} \\
+\textbf{Fold (kỳ validation)} & \textbf{MAE} & \textbf{RMSE} & \textbf{WAPE} & \textbf{WMAPE} & \textbf{RMSLE} & $R^2$ & $w_{\mathrm{LGBM}}$ \\
 \midrule
-1 (kt 20/06/2017) & 0.35983 & 0.36006 & 0.5082 & 0.35798 & 75.46 \\
-2 (kt 18/07/2017) & 0.34690 & 0.34532 & 0.3924 & \textbf{0.34419} & \textbf{67.96} \\
-3 (kt 15/08/2017) & 0.37291 & 0.37038 & 0.3482 & 0.36934 & 83.29 \\
+1 (24/05--20/06/2017) & 74.57 & 278.27 & 13.02\% & 12.75\% & 0.35429 & 0.9647 & 0.7002 \\
+2 (21/06--18/07/2017) & \textbf{66.85} & 248.99 & \textbf{12.00\%} & \textbf{11.69\%} & \textbf{0.34359} & \textbf{0.9691} & 0.8382 \\
+3 (19/07--15/08/2017) & 76.22 & \textbf{246.20} & 13.83\% & 13.48\% & 0.36181 & 0.9672 & 0.9939 \\
 \midrule
-\multicolumn{4}{@{}l}{\textbf{Trung bình 3 fold}} & \textbf{0.35717} & 75.57 \\
+\textbf{Pooled (gộp 3 fold)} & 72.54 & 258.28 & 12.95\% & 12.63\% & 0.35330 & 0.9669 & --- \\
 \bottomrule
 \end{tabular}
-\caption{Kết quả kiểm định walk-forward của global ensemble trên tập validation nội bộ.}
+\caption{Kết quả kiểm định walk-forward của Global Blend trên tập validation nội bộ (MAE/RMSE/WAPE/WMAPE/RMSLE: thấp hơn là tốt hơn; $R^2$ càng gần 1 càng tốt).}
 \label{tab:folds}
 \end{table}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{Mô hình} & \textbf{MAE} & \textbf{RMSE} & \textbf{WAPE} & \textbf{WMAPE} & \textbf{RMSLE} & $R^2$ \\
+\midrule
+LightGBM (global) & \textbf{72.52} & \textbf{257.89} & \textbf{12.95\%} & \textbf{12.63\%} & 0.35353 & \textbf{0.9670} \\
+CatBoost (global) & 76.37 & 272.31 & 13.63\% & 13.36\% & 0.35857 & 0.9632 \\
+\textbf{Blend (hòa trộn log-space)} & 72.54 & 258.28 & 12.95\% & 12.63\% & \textbf{0.35330} & 0.9669 \\
+\bottomrule
+\end{tabular}
+\caption{So sánh chỉ số pooled (gộp toàn bộ 3 fold) giữa hai mô hình thành phần và blend.}
+\label{tab:pooled}
+\end{table}
+
+\subsubsection{Đọc kết quả theo bộ chỉ số đa tiêu chí}
+
+\begin{itemize}
+    \item \textbf{WAPE 12.95\% (pooled)}: tương đương Forecast Accuracy $\approx$ 87\% --- trung bình mỗi điểm dự báo (cửa hàng $\times$ ngành hàng $\times$ ngày) lệch khoảng 13\% tổng doanh số thực tế, mức mà hệ thống có thể truyền thẳng cho người dùng cuối trên nền tảng;
+    \item \textbf{WMAPE 12.63\%} thấp hơn WAPE 12.95\%: với trọng số 1.5 cho hàng dễ hỏng, sai số tương đối của nhóm ``độ tươi'' thấp hơn mức trung bình --- mô hình làm việc tốt chính ở nhóm có rủi ro đứt hàng cao nhất;
+    \item \textbf{$R^2 = 0.9669$}: mô hình giải thích được khoảng 96.7\% phương sai doanh số trên tập validation, ổn định trên cả 3 fold (0.9647 -- 0.9691);
+    \item \textbf{MAE 72.54 vs RMSE 258.28}: RMSE gấp $\approx$ 3.6 lần MAE, xác nhận tồn tại đuôi sai số lớn tập trung ở nhóm tốc độ bán cao (GROCERY I, BEVERAGES) --- nhóm này được giám sát riêng bằng RMSE;
+    \item \textbf{Blend so với LightGBM thuần}: blend chỉ nhỉnh hơn về RMSLE (0.35330 vs 0.35353) và gần như ngang bằng các chỉ số còn lại --- việc chọn blend là để tối ưu metric mục tiêu trong không gian log, trong khi CatBoost đóng vai trò ``bảo hiểm'' ở các fold đầu ($w_{\mathrm{LGBM}} = 0.70$ ở fold 1);
+    \item \textbf{Xu hướng trọng số}: $w_{\mathrm{LGBM}}$ tăng dần 0.70 $\rightarrow$ 0.84 $\rightarrow$ 0.99 --- optimizer gần như chọn thuần LightGBM ở fold cuối, phù hợp với việc LightGBM thắng CatBoost trên mọi chỉ số pooled;
+    \item \textbf{Fold 2 tốt nhất} (21/06--18/07/2017: WAPE 12.00\%, RMSLE 0.34359); \textbf{fold 3 khó nhất} (19/07--15/08/2017: WAPE 13.83\%) do rơi vào mùa tựu trường và giai đoạn biến động cao ngay trước kỳ dự báo Kaggle.
+\end{itemize}
+
+\subsection{Ảnh hưởng của điểm số đến các quyết định sau huấn luyện}
+
+Điểm số không chỉ là thước đo ghi lại ở cuối quy trình --- trong hệ thống, chúng đóng
+vai trò \textbf{tín hiệu điều khiển} cho năm ``cổng quyết định'' diễn ra ngay sau khi
+mô hình hoàn tất huấn luyện. Mỗi cổng đọc một điểm số khác nhau và dẫn tới một quyết
+định tự động khác nhau; hiểu đúng vai trò của từng cổng là điều kiện để đọc kết quả
+validation ở hai bảng trên một cách chính xác.
+
+\subsubsection{Cổng 1 --- Điểm số quyết định độ dài huấn luyện (early stopping)}
+Do mục tiêu tối ưu là RMSLE trên không gian log, biến mục tiêu được biến đổi bằng
+$\log(1+y)$ (phần Biến đổi Biến Mục tiêu) và quá trình dừng sớm theo dõi chỉ số RMSE
+tính trên biến mục tiêu log-space của tập kiểm định, với kiên nhẫn 100 vòng. Điểm
+validation sau mỗi vòng --- chứ không phải số vòng lặp cấu hình ban đầu --- quyết định
+độ dài huấn luyện thực tế: LightGBM dừng ở 1.013 / 1.888 / 1.699 vòng và CatBoost ở
+3.498 / 1.051 / 1.258 vòng qua ba fold (siêu dữ liệu \texttt{ensemble\_meta.json}), thay
+vì chạy hết ngưỡng cấu hình. Với 33 local model, số vòng tốt nhất còn được dùng để
+retrain trên toàn bộ dữ liệu với hệ số đệm 1.1 lần --- nói cách khác, điểm số trực tiếp
+``viết lại'' siêu tham số số vòng lặp của mô hình.
+
+\subsubsection{Cổng 2 --- Điểm số quyết định cấu trúc ensemble}
+Trọng số hòa trộn không được đặt tay mà được tối ưu bằng \texttt{minimize\_scalar}
+trên đoạn $[0, 1]$ với hàm mất mát là RMSLE trong không gian log (phần Tối ưu trọng số
+hòa trộn), kèm một rào chắn: nghiệm trong đoạn không được tệ hơn mô hình đơn tốt nhất,
+nếu không hệ thống quay về đầu mút $w \in \{0, 1\}$. Kết quả theo từng fold trong
+bảng~\ref{tab:folds} ($w_{\mathrm{LGBM}}$ = 0.70 $\rightarrow$ 0.84 $\rightarrow$ 0.99)
+cho thấy đây là một quyết định ``mở'': ensemble được tái cấu hình theo điểm số của từng
+đợt kiểm định thay vì cố định một tỷ lệ hòa trộn.
+
+\subsubsection{Cổng 3 --- Ngưỡng $\geq$ 1\% quyết định giữ hay bỏ siêu tham số mới}
+Mỗi vòng tìm kiếm siêu tham số phải vượt một cổng chấp nhận: bộ tham số mới chỉ được
+cập nhật khi RMSLE blend trên fold tốt hơn baseline ít nhất $1\%$
+(\texttt{OPTUNA\_MIN\_IMPROVEMENT}). Nếu không đạt ngưỡng, hệ thống \textbf{giữ nguyên
+tham số cũ}; kết quả của lần thử (baseline, best, phần trăm cải thiện, cờ
+\texttt{accepted}) vẫn được ghi vào \texttt{ensemble\_meta.json} để truy vết. Cổng này
+phản ánh một nguyên tắc chống overfit siêu tham số: một cải thiện nhỏ hơn 1\% nhiều
+khả năng là nhiễu của fold chứ không phải tín hiệu tổng quát, và việc đổi tham số theo
+nhiễu còn nguy hiểm hơn việc giữ một cấu hình đã được kiểm chứng.
+
+\subsubsection{Cổng 4 --- Tách ``điểm để chọn'' khỏi ``điểm để báo cáo''}
+Điểm blend trong bảng~\ref{tab:folds} là điểm \emph{fold-tuned}: trọng số $w$ và vòng
+dừng sớm đều được chọn trên chính tập kiểm định của fold, nên mang tính lạc quan. Để
+đối trọng, pipeline tính thêm điểm \textbf{LOO} (leave-one-out): trọng số dùng để chấm
+fold $i$ chỉ được tối ưu trên các fold còn lại. Quy ước của hệ thống là phân tách rõ
+hai loại điểm --- điểm fold-tuned dùng để \emph{chọn} cấu hình, điểm LOO trung thực
+dùng để \emph{báo cáo} --- nhằm tránh tình trạng tự đánh lừa bằng một điểm số được tối
+ưu trên chính tập đo lường nó.
+
+\subsubsection{Cổng 5 --- Điểm số quyết định chiến lược phục vụ}
+Sau huấn luyện, mô hình được đo theo hai chế độ phục vụ: dự báo làm mới hằng ngày
+(\emph{recursive}, phản ánh đúng cách hệ thống vận hành) đạt RMSLE 0.35168, trong khi
+dự báo một lần cho cả kỳ 28 ngày (\emph{one-shot}) đạt 0.38575 --- suy giảm $+9.7\%$.
+Sự suy giảm còn theo độ xa của horizon: tuần 1--4 lần lượt là 0.353 $\rightarrow$ 0.386
+$\rightarrow$ 0.394 $\rightarrow$ 0.407 (siêu dữ liệu \texttt{ensemble\_meta.json},
+trường \texttt{product\_quality}). Điểm số theo horizon vì vậy trực tiếp định hình kiến
+trúc phục vụ: hệ thống chọn re-forecast hằng ngày làm chế độ mặc định, one-shot chỉ sử
+dụng khi bắt buộc, và các nhận định cho tuần 3--4 được đánh dấu là cần thận trọng.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Cổng} & \textbf{Điểm số được đọc} & \textbf{Quyết định tự động} & \textbf{Hệ quả} \\
+\midrule
+Early stopping & RMSE log-space trên val & Số vòng huấn luyện thực tế & 1.013 -- 3.498 vòng/fold \\
+Trọng số blend & RMSLE log-space (argmin) & $w_{\mathrm{LGBM}}$ theo từng fold & 0.70 $\rightarrow$ 0.99 \\
+Cổng siêu tham số & RMSLE cải thiện $\geq$ 1\% & Cập nhật hay giữ tham số & Chống overfit nhiễu fold \\
+Điểm báo cáo & LOO trung thực & Tách điểm chọn / điểm báo cáo & Tránh tự đánh lừa \\
+Chiến lược phục vụ & RMSLE theo chế độ + horizon & Recursive là mặc định & One-shot thua $+9.7\%$ \\
+\bottomrule
+\end{tabular}
+\caption{Tổng hợp các cổng quyết định do điểm số điều khiển sau khi huấn luyện.}
+\label{tab:scoregates}
+\end{table}
+
+Tóm lại, cùng một mô hình sau huấn luyện được nhìn qua ba lớp điểm số với ba mục đích
+khác nhau: điểm \textbf{tối ưu} (RMSLE không gian log) điều khiển biến đổi mục tiêu, độ
+dài huấn luyện và trọng số blend; điểm \textbf{báo cáo} (WAPE, WMAPE, $R^2$ --- như đã
+phân tích ở phần trên và bảng~\ref{tab:pooled}) trả lời câu hỏi nghiệp vụ ``mô hình đủ
+dùng chưa''; và điểm \textbf{kiểm chứng ngoài} (NWRMSLE trên Kaggle, phần Kết quả trên
+Kaggle Leaderboard) xác nhận khả năng tổng quát hóa trên dữ liệu chưa từng thấy. Một
+quyết định sau huấn luyện đúng đắn đòi hỏi dùng đúng điểm số cho đúng mục đích --- đọc
+điểm tối ưu để báo cáo nghiệp vụ, hoặc ngược lại, sẽ dẫn tới kết luận sai lệch cả hai
+phía.
 
 \subsection{Local Models --- 33 ngành hàng}
 
@@ -1324,25 +1512,13 @@ Hệ thống đã submit hai phương án dự báo lên cuộc thi Kaggle \text
 
 \subsubsection{Global Ensemble vượt trội Local Models}
 
-Submission sử dụng Global Ensemble (LightGBM + CatBoost blend) đạt score tốt hơn so với chỉ dùng Local Models trên cả hai leaderboard:
-
-\begin{itemize}
-    \item \textbf{Public Leaderboard:} 0.64438 (Ensemble) vs 0.65307 (Local) --- cải thiện \textbf{0.00869} điểm;
-    \item \textbf{Private Leaderboard:} 0.63542 (Ensemble) vs 0.64207 (Local) --- cải thiện \textbf{0.00665} điểm.
-\end{itemize}
+Submission sử dụng Global Ensemble (LightGBM + CatBoost blend) đạt score tốt hơn so với chỉ dùng Local Models trên cả hai leaderboard: Public 0.64438 vs 0.65307 (cải thiện \textbf{0.00869} điểm) và Private 0.63542 vs 0.64207 (cải thiện \textbf{0.00665} điểm).
 
 Kết quả xác nhận giá trị của chiến lược kết hợp mô hình toàn cục (Global) với chuyên biệt hóa cục bộ (Local): Global Ensemble có khả năng ``bình quân hóa'' các outlier, giúp tổng thể ổn định hơn so với 33 local model riêng lẻ vốn nhạy cảm với nhiễu của từng ngành hàng.
 
 \subsubsection{Private Score tốt hơn Public Score --- Dấu hiệu tích cực}
 
-Cả hai submission đều có private score tốt hơn public score:
-
-\begin{itemize}
-    \item Ensemble: Private 0.63542 $<$ Public 0.64438 (gap $-0.00896$);
-    \item Local: Private 0.64207 $<$ Public 0.65307 (gap $-0.01100$).
-\end{itemize}
-
-Đây là tín hiệu \textbf{tích cực} cho thấy mô hình có khả năng tổng quát hóa (generalization) tốt trên dữ liệu chưa từng thấy, không hiện tượng overfit vào public test set --- điều thường gặp khi người tham gia lặp đi lặp lại thử nghiệm theo public leaderboard.
+Cả hai submission đều có private score tốt hơn public score (Ensemble: 0.63542 $<$ 0.64438, gap $-0.00896$; Local: 0.64207 $<$ 0.65307, gap $-0.01100$). Đây là tín hiệu \textbf{tích cực} cho thấy mô hình có khả năng tổng quát hóa (generalization) tốt trên dữ liệu chưa từng thấy, không hiện tượng overfit vào public test set --- điều thường gặp khi người tham gia lặp đi lặp lại thử nghiệm theo public leaderboard.
 
 \subsubsection{Phân tích khoảng cách validation nội bộ --- Kaggle test}
 
@@ -1352,7 +1528,7 @@ Cả hai submission đều có private score tốt hơn public score:
 \toprule
 \textbf{Chỉ số} & \textbf{Validation nội bộ} & \textbf{Kaggle Test} & \textbf{Gap} \\
 \midrule
-Global Ensemble & 0.35717 (RMSLE) & 0.64438 (NWRMSLE) & $+0.28721$ \\
+Global Ensemble & 0.35330 (RMSLE) & 0.64438 (NWRMSLE) & $+0.29108$ \\
 Local Models (TB) & $\approx$0.35 (RMSLE) & 0.65307 (NWRMSLE) & $+0.30307$ \\
 \bottomrule
 \end{tabular}
@@ -1367,14 +1543,14 @@ Local Models (TB) & $\approx$0.35 (RMSLE) & 0.65307 (NWRMSLE) & $+0.30307$ \\
     
     \item \textbf{Khác biệt cấp độ dự báo:} Validation ở cấp (store $\times$ family) đã được tổng hợp, submission Kaggle phải phân rã xuống cấp (store $\times$ item) --- sai số tích lũy qua bước phân rã theo tỷ lệ chia sẻ 45 ngày;
     
-    \item \textbf{Khác biệt phân phối dữ liệu:} Tập validation walk-forward dùng dữ liệu 06/2017--08/2017 đã biết trước cho feature lag, trong khi dự báo đệ quy 16 ngày trên Kaggle phải sinh lag features từ chính các dự báo trung gian (prediction feedback) làm sai số lan truyền;
+    \item \textbf{Khác biệt phân phối dữ liệu:} Tập validation walk-forward dùng dữ liệu 05/2017--08/2017 đã biết trước cho feature lag, trong khi dự báo đệ quy 16 ngày trên Kaggle phải sinh lag features từ chính các dự báo trung gian (prediction feedback) làm sai số lan truyền;
     
     \item \textbf{Yếu tố bất thường:} Giai đoạn test 16/08---31/08/2017 có biến động mùa tựu trường, sau động đất Ecuador và các biến động kinh tế vĩ mô khó dự đoán từ dữ liệu huấn luyện.
 \end{enumerate}
 
 \subsection{So sánh với baseline và top solution}
 
-\begin{table}[h!]
+\begin{table}[H]
 \centering
 \small
 \begin{tabular}{@{}lccc@{}}
@@ -1405,11 +1581,132 @@ Với private score 0.63542 (Ensemble), hệ thống đạt kết quả ở mứ
 
 Tuy vậy, với bối cảnh là dự án học tập trong khuôn khổ Samsung Innovation Campus AI Course, kết quả NWRMSLE 0.63542 là thành tích đáng ghi nhận, chứng minh pipeline end-to-end hoạt động đúng đắn và kiến trúc Global Ensemble + Smart Routing có giá trị thực tiễn.
 
+\section{Nhật ký thí nghiệm và bằng chứng vận hành}
+
+Phần này tổng hợp log gốc và kết quả đo lường của lần chạy thí nghiệm cải tiến mô hình
+(01--02/09/2026; Python 3.14.6, LightGBM 4.7, CatBoost 1.2.10, scikit-learn 1.9), lưu
+tại thư mục \texttt{report\_logs/}. Mọi con số được trích trực tiếp từ log --- không
+suy diễn. Đây đồng thời là case study cụ thể của cổng chấp nhận siêu tham số đã mô tả
+ở mục ``Ảnh hưởng của điểm số đến các quyết định sau huấn luyện''.
+
+\subsection{Timeline thí nghiệm}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lp{11.5cm}@{}}
+\toprule
+\textbf{Thời điểm} & \textbf{Sự kiện} \\
+\midrule
+02/09, ~00:30 & Backup toàn bộ model artifacts cũ $\rightarrow$ \texttt{models\_backup\_20260902/} (61MB) \\
+02/09, ~00:40 & Train global: Optuna 24 trial (fold-3) $\rightarrow$ 3 fold walk-forward $\rightarrow$ retrain 936.506 dòng (~5,5 giờ) \\
+02/09, ~06:15 & Train xong. Cổng chấp nhận \textbf{FAIL} $\rightarrow$ rollback artifacts về bản baseline \\
+04/09, 09:38 & Chạy \texttt{predict.py} $\rightarrow$ \texttt{submission\_ensemble.csv} 3.370.464 dòng (4.5 phút) \\
+\bottomrule
+\end{tabular}
+\caption{Timeline lần thí nghiệm cải tiến mô hình 01--02/09/2026.}
+\label{tab:timeline}
+\end{table}
+
+\subsection{Kết quả baseline so với thí nghiệm}
+
+Cùng giao thức: walk-forward 3 fold $\times$ 28 ngày, feature spec v2.1 (65 cột), ES
+trên validation, blend log-space tối ưu $w$. Nguồn:
+\texttt{ensemble\_meta\_baseline.json}, \texttt{ensemble\_meta\_experiment.json}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Chỉ số} & \textbf{Baseline (đang chạy)} & \textbf{Thí nghiệm} & \textbf{Chênh} \\
+\midrule
+Blend RMSLE (fold-tuned) & \textbf{0.35168} & 0.37913 $\pm$ 0.0056 & tệ hơn 7.8\% \\
+--- Fold 1 (val 24/05$\rightarrow$20/06) & --- & 0.38298 & \\
+--- Fold 2 (val 21/06$\rightarrow$18/07) & --- & 0.37123 & \\
+--- Fold 3 (val 19/07$\rightarrow$15/08) & --- & 0.38319 & \\
+One-shot 28 ngày & 0.38575 ($+9.7\%$) & 0.4162 ($+9.8\%$) & tệ hơn \\
+Blend weight ($w_{\mathrm{LGBM}}$) & 0.9359 (median) & 0.610 (oof) & \\
+\bottomrule
+\end{tabular}
+\caption{So sánh baseline đang phục vụ với bản thí nghiệm.}
+\label{tab:experiment}
+\end{table}
+
+Vòng Optuna 24 trial trên fold-3 cho kết quả baseline blend 0.38329 $\rightarrow$ best
+0.38261 --- chỉ cải thiện $+0.18\%$, dưới ngưỡng chấp nhận $1\%$, nên hệ thống tự giữ
+tham số cũ; đồng thời vì điểm tổng thể của bản thí nghiệm tệ hơn baseline, artifacts
+được rollback. Bộ levers của lần thí nghiệm gồm \texttt{N\_SEEDS=2}, recency weighting
+với half-life 180 ngày và feature mới \texttt{sales\_std7/std28} kèm lịch đầy đủ
+(payday, dayofmonth, weekofmonth, dayofyear, is\_month\_start/end). Kết luận rút ra:
+recency weighting 180 ngày là nghi phạm chính làm điểm xấu đi; feature mới không mang
+tín hiệu đủ mạnh (Optuna không vượt được baseline).
+
+\subsection{Bộ sáu chỉ số của bản thí nghiệm}
+
+Trên pooled OOF của bản thí nghiệm (nguồn: \texttt{ensemble\_meta\_experiment.json}):
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{Model} & \textbf{RMSLE} & \textbf{MAE} & \textbf{RMSE} & \textbf{WAPE} & \textbf{WMAPE} & $R^2$ \\
+\midrule
+LGBM & 0.37985 & 57.61 & 220.37 & 11.56\% & 11.33\% & 0.97337 \\
+CatBoost & 0.38082 & 56.81 & 216.10 & 11.40\% & 11.19\% & 0.97440 \\
+\textbf{Blend} & \textbf{0.37919} & \textbf{56.61} & \textbf{216.05} & \textbf{11.36\%} & \textbf{11.14\%} & \textbf{0.97441} \\
+\bottomrule
+\end{tabular}
+\caption{Sáu chỉ số pooled OOF của bản thí nghiệm (phân biệt với bảng pooled của bản đang phục vụ ở bảng~\ref{tab:pooled}).}
+\label{tab:experimentmetrics}
+\end{table}
+
+NWRMSLE (chuẩn chấm Kaggle, $w = 1.25$ cho perishable) của bản thí nghiệm: 0.37176.
+
+\subsection{Sinh submission và kiểm thử}
+
+\textbf{Sinh submission (04/09):} \texttt{python ml\_training/\allowbreak src/\allowbreak predict.py} ở chế độ
+recursive, min\_lag=1, $w_{\mathrm{LGBM}} = 0.9359$ (từ ensemble baseline) sinh
+\texttt{submission\_ensemble.csv} gồm 3.370.464 dòng (72.5\% khác 0) trong 4.5 phút.
+Hai lỗi đã được vá trong \texttt{predict.py} qua lần chạy này: (1) dtype nullable cho
+cột \texttt{onpromotion} khi đọc CSV theo chunk (pandas 3.0 DtypeWarning); (2) gộp nhóm
+trùng ở ranh giới chunk trước khi dựng \texttt{complete\_panel}.
+
+\textbf{Kết quả kiểm thử:} \texttt{pytest -m 'not llm and not slow'} cho \textbf{130
+passed / 1 failed / 1 skipped} trong 2 phút 19 giây; fail duy nhất là
+\texttt{test\_performance\_all\_endpoints} --- P95 endpoint Products 1369,6ms vượt SLA
+1000ms trên máy chạy cục bộ (vấn đề độ trễ phần cứng, không phải lỗi đúng đắn). Riêng
+bộ 12 unit test chỉ số và feature contract (\texttt{test\_train\_metrics.py}) đạt
+12/12: công thức MAE/RMSE/WAPE/WMAPE/$R^2$/RMSLE khớp chuẩn, rolling std đúng
+\texttt{shift(1).rolling(7)}, payday đúng, không leak target vào lag/rolling. Bộ test
+LLM chat (\texttt{llm}, \texttt{slow}) chưa chạy trong đợt này do cần quota Groq
+(free 200k token/ngày).
+
+\subsection{Tái tạo các log}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Log} & \textbf{Lệnh} \\
+\midrule
+\texttt{train\_global\_20260902.log} & \texttt{python ml\_training/src/train.py} (~5.5h, cần train.csv 4.7GB) \\
+\texttt{predict\_run\_20260904.log} & \texttt{python ml\_training/src/predict.py} (~5 phút) \\
+\texttt{tests\_run.log} & \texttt{python -m pytest -m 'not llm and not slow' -q} \\
+\texttt{tests\_train\_metrics.log} & \texttt{pytest backend/tests/test\_train\_metrics.py -q} \\
+\bottomrule
+\end{tabular}
+\caption{Lệnh tái tạo từng log trong thư mục \texttt{report\_logs/}.}
+\label{tab:repro}
+\end{table}
+
 \section{Kiểm thử API Endpoints}
 
 Các kết quả trong mục này được thực thi qua bộ kiểm thử tự động \textbf{pytest} đặt tại \texttt{backend/tests/}, gồm sáu module: \texttt{test\_api.py} (hành vi endpoint), \texttt{test\_security.py} (JWT, Row-Level Isolation, SQL injection, truy cập LLM), \texttt{test\_llm\_tools.py} (công cụ Function Calling), \texttt{test\_ml\_service.py} (tích hợp dịch vụ suy luận), \texttt{test\_performance.py} (đo độ trễ P50/P95/P99) và \texttt{test\_edge\_cases.py} (trường hợp biên); các module dùng chung fixture đăng nhập và cấu hình trong \texttt{conftest.py}.
 
-\begin{table}[h!]
+\begin{table}[H]
 \centering
 \small
 \begin{tabular}{@{}llrrl@{}}
@@ -1461,7 +1758,7 @@ LLM ngoài phạm vi & Từ chối & validate\_tool\_access chặn & Pass \\
 
 \subsection{Chất lượng hội thoại}
 
-\begin{table}[h!]
+\begin{table}[H]
 \centering
 \small
 \begin{tabular}{@{}llrl@{}}
@@ -1497,7 +1794,7 @@ Thiệt hại ước tính: 67 USD/ngày. Đề xuất: đặt hàng gấp với
 
 \section{Đánh giá hiệu năng tổng thể}
 
-\begin{table}[h!]
+\begin{table}[H]
 \centering
 \begin{tabular}{@{}lll@{}}
 \toprule
@@ -1515,7 +1812,6 @@ Uptime 72 giờ test & 99.2\% & Đạt yêu cầu \\
 \caption{Tổng hợp chỉ số hiệu năng hệ thống.}
 \end{table}
 
-\cleardoublepage
 % =========================================================================
 % CHƯƠNG 5: KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
 % =========================================================================

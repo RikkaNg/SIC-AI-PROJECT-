@@ -26,3 +26,8 @@ LLM_REASONING_EFFORT=
 LLM_HISTORY_TOKEN_BUDGET=1200
 LLM_HISTORY_MAX_MESSAGES=40
 LLM_HISTORY_MAX_CHARS_PER_MSG=4000
+
+# ---- Chong bia so lieu (grounding check) ----
+# 0.6 = 60% so trong cau tra loi phai xuat hien trong ket qua tool; 0 retry = tat.
+LLM_GROUNDING_MIN_MATCH=0.6
+LLM_GROUNDING_RETRIES=1

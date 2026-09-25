@@ -1,28 +1,40 @@
 # ==============================================================================
-# 1. DỮ LIỆU & DATABASE (Data & Databases)
+# SIC-AI-PROJECT - .gitignore
+# Quy tắc chung: file được sinh lại từ script/data thì bỏ, source + template thì giữ.
 # ==============================================================================
-# Chặn toàn bộ data thô và đã xử lý
+
+# ------------------------------------------------------------------------------
+# 1. SECRETS & BIẾN MÔI TRƯỜNG (bắt buộc chặn trước khi commit)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+.env.local
+# File template của dự án là ".envexamble" - LUÔN được commit (sửa chữ nếu đổi tên)
+!.env.example
+!.envexamble
+
+# ------------------------------------------------------------------------------
+# 2. DỮ LIỆU & DATABASE (retail.db ~4GB - tuyệt đối không commit)
+# ------------------------------------------------------------------------------
 ml_training/data/raw/*
 ml_training/data/processed/*
 !ml_training/data/raw/.gitkeep
 !ml_training/data/processed/.gitkeep
 
-# Chặn mọi file dữ liệu dạng bảng/nặng
 *.csv
 *.parquet
 *.feather
 *.h5
 *.xlsx
 
-# Cơ sở dữ liệu SQLite
 *.db
 *.sqlite
 *.sqlite3
 
-# ==============================================================================
-# 2. MODEL ARTIFACTS & ML TRAINING RUNS
-# ==============================================================================
-# File trọng số model nặng
+# ------------------------------------------------------------------------------
+# 3. MODEL ARTIFACTS & TRAINING RUNS
+# ------------------------------------------------------------------------------
+# Trọng số model nặng sinh bởi train/retrain
 *.pkl
 *.cbm
 *.joblib
@@ -30,69 +42,99 @@ ml_training/data/processed/*
 *.pt
 *.pth
 
+# Ngoại lệ: 2 file model cần để ml_service chạy ngay sau khi clone
+# (lgbm_model.pkl 8.8MB + preprocessor.pkl 7.6KB - đã track, giữ nguyên)
+!ml_service/models/lgbm_model.pkl
+!ml_service/models/preprocessor.pkl
+
 # Log huấn luyện & thư mục sinh tự động của thư viện ML
 catboost_info/
 **/catboost_info/
 lightning_logs/
 wandb/
-*.log
-frondend2/
-# ==============================================================================
-# 3. PYTHON & MÔI TRƯỜNG ẢO
-# ==============================================================================
+mlflow_runs/
+
+# Thư mục kết quả thí nghiệm cục bộ
+models_experiment_*/
+
+# ------------------------------------------------------------------------------
+# 4. PYTHON & MÔI TRƯỜNG ẢO
+# ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 
-# Môi trường ảo (Virtual Environments & Conda)
 venv/
 env/
-.envexample/
 .venv/
 ENV/
-anaconda_projects/
 .conda/
+anaconda_projects/
 
-# Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
-# Pytest / Coverage
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
 
-# ==============================================================================
-# 4. FRONTEND (Node.js / React / Vite)
-# ==============================================================================
-frontend/node_modules/
+# ------------------------------------------------------------------------------
+# 5. FRONTEND (Node.js / React / Vite)
+# ------------------------------------------------------------------------------
 node_modules/
-frontend/dist/
+frontend/node_modules/
 dist/
+frontend/dist/
 dist-ssr/
 *.local
 .pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# ==============================================================================
-# 5. BIẾN MÔI TRƯỜNG & BẢO MẬT (Secrets & Env)
-# ==============================================================================
-.env
-.env.*
-!.env.example
+# ------------------------------------------------------------------------------
+# 6. LOG & FILE TẠM
+# ------------------------------------------------------------------------------
+*.log
+logs/
+report_logs/
+*.tmp
+*.bak
+*~
 
-# ==============================================================================
-# 6. IDE & HỆ ĐIỀU HÀNH (OS & Editors)
-# ==============================================================================
-.DS_Store
-Thumbs.db
+# ------------------------------------------------------------------------------
+# 7. LATEX BUILD ARTIFACTS (SIC_AI_Capstone_Final_Report)
+#    Giữ: .tex (nguồn) + .pdf (bản cuối). Bỏ: file phụ sinh khi biên dịch.
+# ------------------------------------------------------------------------------
+*.aux
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+*.lof
+*.lot
+
+# ------------------------------------------------------------------------------
+# 8. IDE & HỆ ĐIỀU HÀNH
+# ------------------------------------------------------------------------------
 .idea/
 .vscode/
 *.sublime-project
 *.sublime-workspace
 .zcode/
+.superdesign/
+.DS_Store
+Thumbs.db
+desktop.ini
 
+# ------------------------------------------------------------------------------
+# 9. GHI CHÚ RIÊNG (không commit)
+# ------------------------------------------------------------------------------
 ML_MODEL_EFFICIENCY_RECOMMENDATIONS.md
-SIC_AI_Capstone_Final_Report.aux
-SIC_AI_Capstone_Final_Report.out
-SIC_AI_Capstone_Final_Report.toc

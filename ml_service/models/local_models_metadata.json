@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-08-19T02:26:52",
+  "trained_at": "2026-09-11T19:28:47",
   "val_days": 28,
   "min_rows_to_train": 1000,
   "retrain_on_full_data": true,

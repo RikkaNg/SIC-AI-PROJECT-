@@ -47,3 +47,9 @@ LLM_HISTORY_TOKEN_BUDGET = max(0, int(os.environ.get("LLM_HISTORY_TOKEN_BUDGET",
 LLM_HISTORY_MAX_MESSAGES = max(1, int(os.environ.get("LLM_HISTORY_MAX_MESSAGES", "40")))
 # Chặn 1 tin nhắn dài bất tận nhồi vào lịch sử.
 LLM_HISTORY_MAX_CHARS_PER_MSG = max(100, int(os.environ.get("LLM_HISTORY_MAX_CHARS_PER_MSG", "4000")))
+
+# ---- Chống bịa số liệu (grounding check) ----
+# Tỉ lệ số trong câu trả lời phải xuất hiện trong kết quả tool (0.6 = 60%).
+# Retry tối đa khi checker nghi model bịa (0 = tắt hẳn verifier).
+LLM_GROUNDING_MIN_MATCH = float(os.environ.get("LLM_GROUNDING_MIN_MATCH", "0.6"))
+LLM_GROUNDING_RETRIES = max(0, int(os.environ.get("LLM_GROUNDING_RETRIES", "1")))

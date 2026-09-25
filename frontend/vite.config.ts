@@ -30,6 +30,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    // Dev: proxy /api sang backend gateway (như nginx ở prod) để mọi port dev đều chạy được
+    proxy: {
+      '/api': 'http://127.0.0.1:8000',
+    },
+  },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],

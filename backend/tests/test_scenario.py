@@ -126,7 +126,7 @@ class TestScenarioAPI:
         assert response.status_code == 401
 
     def test_run_out_of_scope_store_403(self):
-        """manager1 (stores 1-10) chạy kịch bản cho store 15 -> 403, không tốn ML."""
+        """manager1 (store 1) chạy kịch bản cho store 15 -> 403, không tốn ML."""
         token = httpx.post(
             f"{BASE_URL}{API_PREFIX}/auth/login",
             json=MANAGER1_CREDENTIALS, timeout=DEFAULT_TIMEOUT,

@@ -9,7 +9,7 @@ SIC-AI-PROJECT/
 │   │   │   └── retail.db            # File SQLite Database
 │   │   ├── llm_agent/               # Toàn bộ logic LLM Agent (Groq Qwen 3 - qwen/qwen3-32b)
 │   │   ├── security.py              # Auth JWT/API-key + Row-Level Isolation theo cửa hàng
-│   │   ├── scripts/init_auth.py     # Tạo auth.db + seed user (admin / manager1 / manager2)
+│   │   ├── scripts/init_auth.py     # Tạo auth.db + seed user (admin / manager1..manager54, mỗi manager 1 cửa hàng)
 │   │   └── database/
 │   │       ├── retail.db            # Dữ liệu bán lẻ (SQLite WAL)
 │   │       └── auth.db              # User + quyền store_nbr (tách riêng để không mất khi re-init)
@@ -112,6 +112,20 @@ Lưu ý vận hành:
 - 1 lần chạy kịch bản mất ~30-45s do dự báo đệ quy 16 ngày bên ml_service.
 - Lịch/khuyến mãi baseline lấy từ `ml_training/data/raw` (oil.csv, holidays_events.csv, test.csv);
   docker đã mount read-only vào backend.
+
+### Bộ 6 chỉ số đánh giá model (RMSLE · MAE · RMSE · WAPE · WMAPE · R²)
+
+Sau mỗi lần train, kết quả đầy đủ nằm ở:
+
+- **Global ensemble**: `ml_service/models/ensemble_meta.json` → block `validation_metrics`
+  (`pooled_oof` cho LGBM/CatBoost/Blend + `per_fold`), block `hyperparam_search`
+  (kết quả Optuna: có chấp nhận tham số mới hay không), `product_quality` (one-shot/degradation).
+- **33 local models**: `ml_service/models/local_models_metrics.csv` — cột
+  `family, rmsle, mae, rmse, wape, wmape, r2` (val 28 ngày cuối, WMAPE trọng số perishable ×1.5).
+
+Công thức: RMSLE = √mean((log1p ŷ − log1p y)²) · MAE = mean|y−ŷ| · RMSE = √mean((y−ŷ)²) ·
+WAPE = Σ|y−ŷ|/Σ|y| · WMAPE = Σw|y−ŷ|/Σw|y| với w=1.5 nếu perishable · R² = 1 − SS_res/SS_tot.
+Unit test công thức: `backend/tests/test_train_metrics.py`.
 
 ### Chạy test (backend/tests)
 

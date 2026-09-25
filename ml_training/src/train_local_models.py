@@ -35,6 +35,25 @@ from data_loader import load_data
 from preprocessor import engineer_features, build_preprocessor
 from cluster_features import ClusterFeatureEngineer
 
+
+def _compute_all_metrics(y_true, y_pred, weights=None):
+    """Bộ 6 chỉ số thuần numpy (cùng công thức evaluate_metrics.py):
+    mae, rmse, wape, r2, wmape (weights=None → wmape≡wape), rmsle."""
+    y_true = np.asarray(y_true, dtype="float64")
+    y_pred = np.clip(np.asarray(y_pred, dtype="float64"), 0, None)
+    w = np.ones_like(y_true) if weights is None else np.asarray(weights, dtype="float64")
+    err = y_pred - y_true
+    denom = float(np.sum(w * np.abs(y_true)))
+    ss_tot = float(np.sum((y_true - y_true.mean()) ** 2))
+    return {
+        "mae": float(np.mean(np.abs(err))),
+        "rmse": float(np.sqrt(np.mean(err ** 2))),
+        "wape": float(np.abs(err).sum() / max(float(np.abs(y_true).sum()), 1e-9)),
+        "r2": float(1.0 - np.sum(err ** 2) / ss_tot) if ss_tot > 0 else float("nan"),
+        "wmape": float(np.sum(w * np.abs(err)) / denom) if denom > 0 else float("nan"),
+        "rmsle": float(np.sqrt(np.mean((np.log1p(y_pred) - np.log1p(np.maximum(y_true, 0))) ** 2))),
+    }
+
 MODELS_DIR = PROJECT_ROOT / "ml_service" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -106,9 +125,17 @@ def train_one_family(family: str, df_family: pd.DataFrame):
     )
     best_iter = model.best_iteration_ or params["n_estimators"]
 
-    # 5. Đo lường RMSLE
-    val_preds = model.predict(X_val)
-    rmsle = float(np.sqrt(mean_squared_error(y_val_log, val_preds)))
+    # 5. Đo lường đủ 6 chỉ số trên thang doanh số GỘC (không log)
+    #    RMSLE tính trên log-space ≡ RMSLE gốc; các metric còn lại dùng expm1.
+    val_preds_log = model.predict(X_val)
+    rmsle = float(np.sqrt(mean_squared_error(y_val_log, val_preds_log)))
+    y_true_orig = val_df["target"].clip(lower=0).to_numpy(dtype="float64")
+    y_pred_orig = np.clip(np.expm1(val_preds_log), 0, None)
+    w_peri = np.where(val_df["perishable"].to_numpy() > 0, 1.5, 1.0)
+    m = _compute_all_metrics(y_true_orig, y_pred_orig, weights=w_peri)
+    mae_v, rmse_v, wape_v, r2_v, wmape_v = (
+        m["mae"], m["rmse"], m["wape"] * 100, m["r2"], m["wmape"] * 100
+    )
 
     # 6. Retrain trên 100% dữ liệu (train + val)
     if RETRAIN_ON_FULL_DATA:
@@ -129,6 +156,11 @@ def train_one_family(family: str, df_family: pd.DataFrame):
         # Metadata chất lượng (§3.3): cho phép ml_service định tuyến theo chất
         # lượng - family có RMSLE validation kém sẽ rơi về Global Ensemble.
         "val_rmsle": round(rmsle, 5),
+        "val_mae": round(mae_v, 4),
+        "val_rmse": round(rmse_v, 4),
+        "val_wape": round(wape_v, 3),
+        "val_wmape": round(wmape_v, 3),
+        "val_r2": round(r2_v, 5) if np.isfinite(r2_v) else None,
         "n_train_days": int(df_family["date"].nunique()),
         "trained_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -139,6 +171,11 @@ def train_one_family(family: str, df_family: pd.DataFrame):
         "n_val": len(val_df),
         "best_iteration": int(best_iter),
         "rmsle": round(rmsle, 5),
+        "mae": round(mae_v, 4),
+        "rmse": round(rmse_v, 4),
+        "wape": round(wape_v, 3),
+        "wmape": round(wmape_v, 3),
+        "r2": round(r2_v, 5) if np.isfinite(r2_v) else None,
         "retrained_on_full": RETRAIN_ON_FULL_DATA,
     }
     return artifact, metrics
@@ -147,11 +184,14 @@ def train_one_family(family: str, df_family: pd.DataFrame):
 def train_local_models():
     logger.info(">>> Loading data...")
     df = load_data()
-    
-    # Feature Engineering toàn cục 1 lần (bao gồm Cluster Features)
+
+    # Feature Engineering toàn cục 1 lần. Signature mới của engineer_features
+    # KHÔNG còn fit_cluster=True — phải tự fit ClusterFeatureEngineer trước,
+    # rồi truyền instance đã fit vào để transform.
     logger.info(">>> Engineering features (Including Cluster Features)...")
     cluster_eng = ClusterFeatureEngineer(smoothing=10.0)
-    df = engineer_features(df, cluster_engineer=cluster_eng, fit_cluster=True)
+    cluster_eng.fit(df, target_col="target")
+    df = engineer_features(df, cluster_engineer=cluster_eng)
 
     all_families = sorted(df["family"].dropna().unique().tolist())
     logger.info(f">>> Found {len(all_families)} families. Starting training loop...\n")

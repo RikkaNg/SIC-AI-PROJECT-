@@ -14,14 +14,20 @@ ML_SERVICE_URL = "http://127.0.0.1:8001"
 
 pytestmark = pytest.mark.ml
 
-# 31 cột theo đúng schema preprocessor (ml_training/src/preprocessor.py):
-# COLS_FILL_ZERO + COLS_CATEGORICAL + COLS_PASSTHROUGH
+# 45 cột theo đúng schema preprocessor (ml_training/src/preprocessor.py):
+# COLS_FILL_ZERO + COLS_CATEGORICAL + COLS_PASSTHROUGH. Thêm cột là tương thích
+# ngược với preprocessor.pkl cũ (ColumnTransformer chọn theo tên, thừa bỏ qua).
 BASE_FEATURES = {
     # COLS_FILL_ZERO
     "transactions_lag1": 2500,
     "sales_lag7": 100.5,
     "sales_lag14": 98.2,
+    "sales_lag28": 95.0,
     "sales_rolling_mean7": 99.8,
+    "sales_rolling_mean14": 99.0,
+    "sales_rolling_mean30": 98.5,
+    "sales_std7": 12.0,
+    "sales_std28": 15.0,
     "cluster_mean_sales": 10.0,
     "cluster_median_sales": 9.0,
     "cluster_std_sales": 2.0,
@@ -47,6 +53,15 @@ BASE_FEATURES = {
     "is_holiday_lead1": 0,
     "is_holiday_lead2": 0,
     "is_tier1_cluster": 0,
+    "is_payday": 0,
+    "is_day_after_payday": 0,
+    "days_from_payday": 3,
+    "days_to_payday": 12,
+    "dayofmonth": 18,
+    "weekofmonth": 3,
+    "dayofyear": 230,
+    "is_month_start": 0,
+    "is_month_end": 0,
     "onpromotion": 1,
     "is_earthquake_period": 0,
     "is_holiday": 0,

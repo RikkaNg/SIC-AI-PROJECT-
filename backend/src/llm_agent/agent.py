@@ -12,6 +12,7 @@ from backend.src.security import validate_tool_access
 from .config import (
     client, MODEL_NAME, LLM_REASONING_EFFORT,
     LLM_HISTORY_TOKEN_BUDGET, LLM_HISTORY_MAX_MESSAGES, LLM_HISTORY_MAX_CHARS_PER_MSG,
+    LLM_GROUNDING_MIN_MATCH, LLM_GROUNDING_RETRIES,
 )
 from .prompts import SYSTEM_PROMPT_SUPPLY_CHAIN as SYSTEM_PROMPT
 from .tools import (
@@ -105,10 +106,15 @@ _MAX_RETRY_WAIT_SECONDS = 120
 
 
 def _chat_completion_with_retry(**kwargs):
-    """Gọi chat.completions.create với retry cho lỗi 429 rate limit TPM."""
+    """Gọi chat.completions.create với retry cho lỗi 429 rate limit TPM + log latency/usage."""
     for attempt in range(RATE_LIMIT_RETRIES + 1):
+        t0 = time.time()
         try:
-            return client.chat.completions.create(**kwargs)
+            response = client.chat.completions.create(**kwargs)
+            u = getattr(response, "usage", None)
+            logger.info(f"LLM call {time.time() - t0:.1f}s | prompt={getattr(u, 'prompt_tokens', '?')} "
+                        f"completion={getattr(u, 'completion_tokens', '?')} total={getattr(u, 'total_tokens', '?')}")
+            return response
         except APIStatusError as e:
             if getattr(e, "status_code", None) == 429 and attempt < RATE_LIMIT_RETRIES:
                 wait = _rate_limit_wait(e)
@@ -116,7 +122,8 @@ def _chat_completion_with_retry(**kwargs):
                     logger.warning(f"Groq 429: cần chờ {wait:.0f}s (hết hạn mức ngày) - không retry.")
                     raise
                 wait = wait or 10.0 * (attempt + 1)
-                logger.warning(f"Groq 429 rate limit - thử lại sau {wait:.0f}s (lần {attempt + 1}/{RATE_LIMIT_RETRIES}).")
+                logger.warning(f"Groq 429 rate limit sau {time.time() - t0:.1f}s - thử lại sau {wait:.0f}s "
+                               f"(lần {attempt + 1}/{RATE_LIMIT_RETRIES}).")
                 time.sleep(wait)
                 continue
             raise
@@ -159,6 +166,106 @@ def _extra_model_kwargs() -> dict:
     return {}
 
 
+# ====================== CHỐNG BỊA SỐ LIỆU (grounding check) ======================
+_NUMBER_RE = re.compile(r"-?\d[\d.,]*")
+
+_GROUNDING_WARN_WITH_TOOLS = (
+    "CẢNH BÁO CHỐNG BỊA: những số sau KHÔNG có trong kết quả tool: {unmatched}. "
+    "Viết lại câu trả lời CHỈ dùng số liệu có trong kết quả tool ở trên (được phép tính "
+    "chênh lệch/% từ số đã có nhưng ghi rõ cách tính). Số nào không có thì nói rõ là "
+    "chưa có dữ liệu - KHÔNG được nêu số tự suy ra."
+)
+_GROUNDING_WARN_NO_TOOLS = (
+    "Câu trả lời trước chứa số liệu nhưng bạn CHƯA gọi tool nào. Nếu câu hỏi cần dữ liệu "
+    "cửa hàng/hàng hóa: hãy gọi tool phù hợp rồi mới trả lời. Nếu hệ thống không có dữ liệu "
+    "đó: trả lời rõ là chưa có dữ liệu và gợi ý câu hỏi gần nhất được hỗ trợ. "
+    "KHÔNG được nêu bất kỳ con số nào không đến từ kết quả tool."
+)
+
+
+def _number_candidates(raw: str) -> set:
+    """Sinh mọi cách đọc hợp lệ của một token số (dấu . , kiểu VN và US đảo nhau)."""
+    s = raw.strip().strip(".,")
+    if not s or not any(c.isdigit() for c in s):
+        return set()
+    cands = set()
+    try:  # đọc kiểu US: ',' là nghìn, '.' là thập phân (payload JSON)
+        cands.add(float(s.replace(",", "")))
+    except ValueError:
+        pass
+    try:  # đọc kiểu VN: '.' là nghìn, ',' là thập phân (câu trả lời tiếng Việt)
+        cands.add(float(s.replace(".", "").replace(",", ".")))
+    except ValueError:
+        pass
+    # abs: model nói "giảm 95,86%" trong khi payload lưu -95.86 là diễn giải hợp lệ,
+    # không phải bịa - so sánh bỏ qua dấu.
+    cands |= {abs(c) for c in cands}
+    return cands
+
+
+def _number_tokens(text: str) -> list:
+    """Danh sách token số (chuỗi gốc) trong một đoạn văn."""
+    return [raw.strip().strip(".,") for raw in _NUMBER_RE.findall(text or "")
+            if any(c.isdigit() for c in raw)]
+
+
+def _numbers_in_text(text: str) -> set:
+    """Tập giá trị số (mọi cách đọc) trong một đoạn văn."""
+    vals = set()
+    for raw in _number_tokens(text):
+        vals |= _number_candidates(raw)
+    return vals
+
+
+def _tool_payloads_text(messages: list) -> str:
+    """Ghép nội dung toàn bộ message role='tool' trong hội thoại hiện tại."""
+    return "\n".join(m.get("content", "") for m in messages
+                     if isinstance(m, dict) and m.get("role") == "tool")
+
+
+def _payload_variants(tool_payloads_text: str) -> set:
+    """Tập giá trị có thể khớp từ payload JSON: gốc, abs, làm tròn int/1dp/2dp."""
+    vals = set()
+    for raw in _NUMBER_RE.findall(tool_payloads_text or ""):
+        try:
+            v = float(raw.replace(",", ""))  # payload là JSON chuẩn US
+        except ValueError:
+            continue
+        for x in (v, abs(v)):
+            vals.update({x, float(round(x)), round(x, 1), round(x, 2)})
+    return vals
+
+
+def _significant_tokens(text: str) -> list:
+    """
+    Token số đáng neo: loại bỏ số nguyên nhỏ (<10 ở mọi cách đọc) - đó chủ yếu là
+    số đếm trong văn xuôi ("2 cửa hàng", "top 5"), không phải con số kinh doanh
+    cần đối chiếu, giữ lại sẽ gây retry giả.
+    """
+    out = []
+    for t in _number_tokens(text):
+        cands = _number_candidates(t)
+        if cands and max(cands) >= 10:
+            out.append(t)
+    return out
+
+
+def _grounding_ratio(reply: str, tool_payloads_text: str) -> tuple:
+    """
+    Tỉ lệ TOKEN số đáng neo trong reply được 'neo' vào payload tool: một token được
+    tính khớp nếu BẤT KỲ cách đọc nào của nó trùng payload (kèm abs/làm tròn).
+    Số derived (VD: % model tự tính) được chấp nhận ở mức ngưỡng 0.6.
+    Trả về (ratio, danh sách token không khớp). Reply có < 3 token -> (1.0, []).
+    """
+    tokens = _significant_tokens(reply)
+    if len(tokens) < 3:
+        return 1.0, []
+    payload_vals = _payload_variants(tool_payloads_text)
+    unmatched = [t for t in tokens if not (_number_candidates(t) & payload_vals)]
+    ratio = (len(tokens) - len(unmatched)) / len(tokens)
+    return ratio, unmatched
+
+
 # Tool có store_nbr TÙY CHỌN + tham số ẩn _allowed_stores: khi user không chỉ định
 # cửa hàng, agent chèn scope RLS để filter WHERE IN (các tool có store_nbr bắt buộc
 # đã được validate_tool_access kiểm tra trước rồi).
@@ -169,6 +276,10 @@ TOOLS_WITH_STORE_SCOPE = frozenset({
     "get_item_profile",
     "get_store_profile",
     "get_store_traffic",
+    "analyze_gross_margin",
+    # benchmark_store_vs_peers: store_nbr bắt buộc nhưng peers cùng type phải lọc
+    # theo phạm vi user -> vẫn cần _allowed_stores để không rò rỉ dữ liệu nhóm.
+    "benchmark_store_vs_peers",
 })
 
 
@@ -214,7 +325,7 @@ def run_agent(user_query: str, chat_history: list = None,
             tools=TOOLS_SCHEMA,
             tool_choice="auto",
             temperature=0.6,
-            max_tokens=2048,
+            max_tokens=512,  # output chọn tool rất nhỏ; Groq tính max_tokens vào hạn mức TPM
             **_extra_model_kwargs(),
         )
     except (APIStatusError, APIConnectionError) as e:
@@ -227,64 +338,129 @@ def run_agent(user_query: str, chat_history: list = None,
     # Bước 2: Kiểm tra xem LLM có muốn gọi Tool không
     if response_message.tool_calls:
         logger.info(f"LLM yêu cầu gọi {len(response_message.tool_calls)} tool(s).")
+        _execute_tool_calls(messages, allowed_stores)
+        return _synthesize_answer(messages)
 
-        for tool_call in response_message.tool_calls:
-            function_name = tool_call.function.name
-            try:
-                function_args = json.loads(tool_call.function.arguments or "{}")
-            except json.JSONDecodeError as e:
-                logger.warning(f"Tool '{function_name}' trả args không phải JSON hợp lệ: {tool_call.function.arguments!r}")
-                result_str = json.dumps({"error": f"Tham số tool không hợp lệ: {e}"}, ensure_ascii=False)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": function_name,
-                    "content": result_str,
-                })
-                continue
+    # LLM trả lời trực tiếp không dùng Tool - chặn đường bịa số (đường B):
+    # reply chứa nhiều con số mà KHÔNG gọi tool nào -> bắt gọi tool hoặc thừa nhận thiếu dữ liệu.
+    content = response_message.content or ""
+    if LLM_GROUNDING_RETRIES > 0 and len(_significant_tokens(content)) >= 3:
+        logger.warning("Reply chứa số liệu nhưng không gọi tool nào - retry chống bịa (đường B).")
+        messages.append({"role": "system", "content": _GROUNDING_WARN_NO_TOOLS})
+        try:
+            retry_response = _chat_completion_with_retry(
+                model=MODEL_NAME,
+                messages=messages,
+                tools=TOOLS_SCHEMA,
+                tool_choice="auto",
+                temperature=0.6,
+                max_tokens=512,  # như call 1: hoặc chọn tool, hoặc trả lời ngắn
+                **_extra_model_kwargs(),
+            )
+        except (APIStatusError, APIConnectionError) as e:
+            logger.error(f"Groq API error (retry đường B): {e}")
+            raise AgentError(_friendly_llm_error(e)) from e
+        retry_message = retry_response.choices[0].message
+        messages.append(retry_message)
+        if retry_message.tool_calls:
+            _execute_tool_calls(messages, allowed_stores)
+            return _synthesize_answer(messages)
+        return retry_message.content
+    return content
 
-            logger.info(f"Thực thi: {function_name} | Args: {function_args}")
 
-            # Row-Level Isolation: chặn tool nếu vượt phạm vi cửa hàng của user
-            forbidden = validate_tool_access(function_name, function_args, allowed_stores)
-            if forbidden is not None:
-                result_str = json.dumps(forbidden, ensure_ascii=False)
-                logger.warning(f"Chặn tool '{function_name}' - vượt phạm vi cửa hàng của user.")
-            elif function_name in AVAILABLE_FUNCTIONS:
-                try:
-                    fn = _bind_allowed_stores(function_name, AVAILABLE_FUNCTIONS[function_name], allowed_stores)
-                    result_payload = fn(**function_args)
-                    # allow_nan=False: kết quả chứa NaN/Infinity sẽ sinh JSON không hợp lệ
-                    # khiến Groq trả 400 -> lỗi 502 cho user. Đưa về error dict sạch.
-                    result_str = json.dumps(result_payload, ensure_ascii=False, default=str, allow_nan=False)
-                    logger.info(f"Kết quả Tool: {result_str}")
-                except Exception as e:
-                    result_str = json.dumps({"error": f"Lỗi thực thi tool: {str(e)}"})
-            else:
-                result_str = json.dumps({"error": "Tool không tồn tại."})
-
-            # Đưa kết quả Tool về lại cho LLM
+def _execute_tool_calls(messages: list, allowed_stores: Optional[Set[int]]) -> None:
+    """Thực thi toàn bộ tool_calls của message assistant cuối cùng, append kết quả role='tool'."""
+    for tool_call in messages[-1].tool_calls:
+        function_name = tool_call.function.name
+        try:
+            function_args = json.loads(tool_call.function.arguments or "{}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Tool '{function_name}' trả args không phải JSON hợp lệ: {tool_call.function.arguments!r}")
+            result_str = json.dumps({"error": f"Tham số tool không hợp lệ: {e}"}, ensure_ascii=False)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "name": function_name,
                 "content": result_str,
             })
+            continue
 
-        # Bước 3: Gọi LLM lần 2 để nó đọc kết quả Tool và trả lời tự nhiên
-        try:
-            second_response = _chat_completion_with_retry(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=0.6,
-                **_extra_model_kwargs(),
-            )
-        except (APIStatusError, APIConnectionError) as e:
-            logger.error(f"Groq API error (lần 2): {e}")
-            raise AgentError(_friendly_llm_error(e)) from e
+        logger.info(f"Thực thi: {function_name} | Args: {function_args}")
 
-        return second_response.choices[0].message.content
+        # Row-Level Isolation: chặn tool nếu vượt phạm vi cửa hàng của user
+        forbidden = validate_tool_access(function_name, function_args, allowed_stores)
+        if forbidden is not None:
+            result_str = json.dumps(forbidden, ensure_ascii=False)
+            logger.warning(f"Chặn tool '{function_name}' - vượt phạm vi cửa hàng của user.")
+        elif function_name in AVAILABLE_FUNCTIONS:
+            try:
+                fn = _bind_allowed_stores(function_name, AVAILABLE_FUNCTIONS[function_name], allowed_stores)
+                result_payload = fn(**function_args)
+                # allow_nan=False: kết quả chứa NaN/Infinity sẽ sinh JSON không hợp lệ
+                # khiến Groq trả 400 -> lỗi 502 cho user. Đưa về error dict sạch.
+                result_str = json.dumps(result_payload, ensure_ascii=False, default=str, allow_nan=False)
+                logger.info(f"Kết quả Tool: {result_str}")
+            except Exception as e:
+                result_str = json.dumps({"error": f"Lỗi thực thi tool: {str(e)}"})
+        else:
+            result_str = json.dumps({"error": "Tool không tồn tại."})
 
-    else:
-        # Nếu LLM trả lời trực tiếp không dùng Tool
-        return response_message.content
+        # Đưa kết quả Tool về lại cho LLM
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "name": function_name,
+            "content": result_str,
+        })
+
+
+def _synthesize_answer(messages: list) -> str:
+    """
+    Gọi LLM đọc kết quả Tool và trả lời tự nhiên, kèm kiểm tra grounding (đường A):
+    reply chứa nhiều số mà phần lớn không có trong payload tool -> retry 1 lần
+    ép model chỉ dùng số từ tool. Chọn giữa 2 bản theo tỉ lệ khớp cao hơn.
+    """
+    try:
+        second_response = _chat_completion_with_retry(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.3,  # thấp hơn call 1: giảm 'sáng tạo' khi tổng hợp số liệu
+            max_tokens=1200,  # chặn cứng độ dài câu trả lời (style ngắn gọn, đậm đặc)
+            **_extra_model_kwargs(),
+        )
+    except (APIStatusError, APIConnectionError) as e:
+        logger.error(f"Groq API error (lần 2): {e}")
+        raise AgentError(_friendly_llm_error(e)) from e
+
+    content = second_response.choices[0].message.content or ""
+    if LLM_GROUNDING_RETRIES <= 0:
+        return content
+
+    ratio, unmatched = _grounding_ratio(content, _tool_payloads_text(messages))
+    if ratio >= LLM_GROUNDING_MIN_MATCH:
+        return content
+
+    logger.warning(f"Grounding thấp ({ratio:.0%}, {len(unmatched)} số không khớp) - retry ép dùng số từ tool.")
+    messages.append({"role": "system", "content": _GROUNDING_WARN_WITH_TOOLS.format(
+        unmatched=unmatched[:10])})
+    try:
+        fixed_response = _chat_completion_with_retry(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=1200,
+            **_extra_model_kwargs(),
+        )
+    except (APIStatusError, APIConnectionError) as e:
+        logger.error(f"Groq API error (retry grounding): {e}")
+        raise AgentError(_friendly_llm_error(e)) from e
+
+    fixed = fixed_response.choices[0].message.content or ""
+    fixed_ratio, _ = _grounding_ratio(fixed, _tool_payloads_text(messages))
+    if fixed_ratio < ratio:
+        logger.warning(f"Retry grounding không tốt hơn ({fixed_ratio:.0%} < {ratio:.0%}) - giữ câu trả lời đầu.")
+        return content
+    if fixed_ratio < LLM_GROUNDING_MIN_MATCH:
+        logger.warning(f"Grounding vẫn thấp sau retry ({fixed_ratio:.0%}) - đã trả kết quả tốt nhất có thể.")
+    return fixed

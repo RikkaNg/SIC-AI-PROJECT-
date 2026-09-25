@@ -2,59 +2,46 @@
 @import './tailwind.css';
 @import './theme.css';
 
-/* ── Ghi đè an toàn theo frontend2: đảm bảo light theme khớp 1:1 ── */
-:root {
-    --background: #f8fafc !important;
-    /* Nền trắng xám */
-    --foreground: #0f172a !important;
-    /* Chữ đen */
-    --card: #ffffff !important;
-    /* Nền thẻ trắng */
-    --card-foreground: #0f172a !important;
-    --popover: #ffffff !important;
-    --popover-foreground: #0f172a !important;
-    --primary: #2563eb !important;
-    /* Xanh dương đậm */
-    --primary-foreground: #ffffff !important;
-    /* Chữ trên nền xanh */
-    --secondary: #f1f5f9 !important;
-    --secondary-foreground: #0f172a !important;
-    --muted: #f1f5f9 !important;
-    /* Nền xám nhạt cho khung chat/bảng */
-    --muted-foreground: #64748b !important;
-    /* Chữ xám */
-    --accent: #eff6ff !important;
-    --accent-foreground: #2563eb !important;
-    --destructive: #ef4444 !important;
-    --destructive-foreground: #ffffff !important;
-    --border: #e2e8f0 !important;
-    /* Viền xám nhạt */
-    --input: #e2e8f0 !important;
-    --ring: #2563eb !important;
+/* ── Lớp trình bày riêng của app (token màu nằm ở theme.css) ── */
 
-    /* Map cho sidebar */
-    --sidebar: #ffffff !important;
-    --sidebar-foreground: #0f172a !important;
-    --sidebar-border: #e2e8f0 !important;
-    --sidebar-accent: #f1f5f9 !important;
+/* Chữ hiển thị (KPI, tiêu đề, con số) — Space Grotesk */
+.font-display {
+    font-family: "Space Grotesk", "Be Vietnam Pro", system-ui, sans-serif;
 }
 
-/* Đảm bảo body lấy đúng màu nền */
-body,
-html,
-.bg-background {
-    background-color: #f8fafc !important;
-    color: #0f172a !important;
-}
-
-/* Đổi màu các đường lưới trong biểu đồ sang xám nhạt */
+/* Đường lưới & chữ trục biểu đồ — viền ấm, chữ Muted Ink */
 .recharts-cartesian-grid line {
-    stroke: #e2e8f0 !important;
+    stroke: #E7E3D8;
 }
 
-/* Đổi màu chữ trục biểu đồ */
 .recharts-text {
-    fill: #64748b !important;
+    fill: #5C6B62;
+}
+
+/* Focus bàn phím luôn nhìn thấy (input riêng đã có viền đậm khi focus) */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+    outline: 2px solid rgba(30, 90, 70, 0.55);
+    outline-offset: 2px;
+    border-radius: 8px;
+}
+
+/* Khoảnh khắc chuyển động duy nhất: KPI/section hiện lên khi mở view
+   (stagger qua animation-delay; prefers-reduced-motion tắt toàn bộ bên dưới) */
+@keyframes fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.fade-up {
+    animation: fade-up 0.24s ease-out both;
 }
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -63,6 +50,15 @@ html,
 /* Scrollbar ngang mảnh cho thanh chọn cơ sở */
 .scrollbar-thin-x::-webkit-scrollbar { height: 6px; }
 .scrollbar-thin-x::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-thin-x::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
-.scrollbar-thin-x::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-.scrollbar-thin-x { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.scrollbar-thin-x::-webkit-scrollbar-thumb { background: #D8D3C4; border-radius: 999px; }
+.scrollbar-thin-x::-webkit-scrollbar-thumb:hover { background: #B5BEB4; }
+.scrollbar-thin-x { scrollbar-width: thin; scrollbar-color: #D8D3C4 transparent; }
+
+/* Tôn trọng prefers-reduced-motion cho mọi hiệu ứng chuyển */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

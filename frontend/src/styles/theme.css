@@ -1,81 +1,74 @@
-@custom-variant dark (&:is(.dark *));
-
+/* ── Fresh Ledger — token duy nhất của app (nguồn: .superdesign/design-system.md)
+   Giấy ấm, mực rêu, con số là nhân vật chính. Sửa màu ở đây duy nhất. ── */
 :root {
   --font-size: 15px;
-  --background: #f8fafc;
-  --foreground: #0f172a;
+
+  /* Nền & chữ */
+  --background: #F6F4EE;      /* Warm Paper */
+  --foreground: #14231D;      /* Ink */
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #14231D;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #2563eb;
+  --popover-foreground: #14231D;
+
+  /* Mực chính Evergreen + hệ độ tươi */
+  --primary: #1E5A46;         /* Evergreen */
   --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #eff6ff;
-  --accent-foreground: #2563eb;
-  --destructive: #ef4444;
+  --secondary: #EDEAE0;       /* Mist */
+  --secondary-foreground: #14231D;
+  --muted: #EDEAE0;
+  --muted-foreground: #5C6B62; /* Muted Ink */
+  --accent: #EAF3EE;          /* tint Evergreen */
+  --accent-foreground: #1E5A46;
+  --destructive: #D94436;     /* Tomato */
   --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
+
+  /* Viền ấm */
+  --border: #E7E3D8;
+  --input: #E7E3D8;
   --input-background: #ffffff;
-  --switch-background: #e2e8f0;
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --ring: #2563eb;
-  --chart-1: #3b82f6;
-  --chart-2: #10b981;
-  --chart-3: #f59e0b;
-  --chart-4: #a855f7;
-  --chart-5: #f43f5e;
+  --ring: #1E5A46;
+
+  /* Chuỗi màu biểu đồ (đồng bộ CHART_COLORS trong App.tsx) */
+  --chart-1: #1E5A46;
+  --chart-2: #3E8E5A;
+  --chart-3: #E8A33D;
+  --chart-4: #7C5CBF;
+  --chart-5: #D94436;
+  --chart-6: #5C6B62;
+
   --radius: 0.5rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #2563eb;
+
+  /* Sidebar — mảnh rêu đậm duy nhất của app */
+  --sidebar: #1E5A46;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #1E5A46;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #2563eb;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #3E8E5A;
 }
 
-.dark {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #eff6ff;
-  --accent-foreground: #2563eb;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #2563eb;
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --chart-1: #3b82f6;
-  --chart-2: #10b981;
-  --chart-3: #f59e0b;
-  --chart-4: #a855f7;
-  --chart-5: #f43f5e;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #2563eb;
+/* Màu đặt tên — sinh utility Tailwind (bg-evergreen, text-tomato, border-sand…) */
+@theme {
+  --color-evergreen: #1E5A46;
+  --color-evergreen-deep: #174A39;
+  --color-paper: #F6F4EE;
+  --color-ink: #14231D;
+  --color-ink-soft: #2A3B32;
+  --color-mutedink: #5C6B62;
+  --color-tomato: #D94436;
+  --color-tomato-deep: #B93727;
+  --color-leaf: #3E8E5A;
+  --color-leaf-deep: #2E7A4B;
+  --color-citrus: #E8A33D;
+  --color-citrus-deep: #B87A1E;
+  --color-plum: #7C5CBF;
+  --color-mist: #EDEAE0;
+  --color-sand: #E7E3D8;
+  --color-stone-warm: #B5BEB4;
+  --color-faint: #8A968C;
 }
 
 @theme inline {
@@ -98,13 +91,13 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-background: var(--input-background);
-  --color-switch-background: var(--switch-background);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -127,11 +120,6 @@
   body {
     @apply bg-background text-foreground;
   }
-
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
 
   html {
     font-size: var(--font-size);

@@ -143,17 +143,14 @@ def get_sales_summary(store_nbr: Optional[int] = None, days: int = 7,
     try:
         conn = get_db_connection()
         # Sử dụng date() chuẩn SQLite để tính khoảng ngày
-        query = """
-            SELECT f.item_nbr, it.name, it.family, SUM(f.predicted_sales) as total_sales
-            FROM forecasts f
-            LEFT JOIN items it ON f.item_nbr = it.item_nbr
+        base_where = """
             WHERE f.date >= (SELECT MIN(date) FROM forecasts)
               AND f.date < date((SELECT MIN(date) FROM forecasts), '+' || ? || ' day')
         """
         params = [days]
-
+        scope_sql = ""
         if store_nbr is not None:
-            query += " AND f.store_nbr = ?"
+            scope_sql = " AND f.store_nbr = ?"
             params.append(store_nbr)
         elif _allowed_stores is not None:
             # RLS: giới hạn tổng hợp trong phạm vi cửa hàng của user.
@@ -164,10 +161,16 @@ def get_sales_summary(store_nbr: Optional[int] = None, days: int = 7,
                 return {"status": "forbidden",
                         "message": "forbidden: Bạn chưa được gán cửa hàng nào. Liên hệ quản trị viên."}
             marks = ",".join("?" * len(_allowed_stores))
-            query += f" AND f.store_nbr IN ({marks})"
+            scope_sql = f" AND f.store_nbr IN ({marks})"
             params.extend(sorted(int(s) for s in _allowed_stores))
 
-        query += " GROUP BY f.item_nbr, it.name, it.family ORDER BY total_sales DESC"
+        query = f"""
+            SELECT f.item_nbr, it.name, it.family, SUM(f.predicted_sales) as total_sales
+            FROM forecasts f
+            LEFT JOIN items it ON f.item_nbr = it.item_nbr
+            {base_where}{scope_sql}
+            GROUP BY f.item_nbr, it.name, it.family ORDER BY total_sales DESC
+        """
 
         df = pd.read_sql_query(query, conn, params=params)
 
@@ -177,9 +180,16 @@ def get_sales_summary(store_nbr: Optional[int] = None, days: int = 7,
         total_sales = df['total_sales'].sum()
         top_items = df.head(3).to_dict(orient='records')
 
+        # Mốc ngày thật của cửa sổ dự báo - model cần để nêu đúng kỳ,
+        # không gán nhầm kết quả cho "tháng này" ngoài đời thực.
+        win = conn.execute(
+            f"SELECT MIN(f.date), MAX(f.date) FROM forecasts f{base_where}{scope_sql}",
+            params).fetchone()
+
         return {
             "store_nbr": store_nbr if store_nbr else "Toàn hệ thống",
             "forecast_period_days": days,
+            "forecast_window": {"from": win[0], "to": win[1]},
             "total_forecast_sales": round(float(total_sales), 2),
             "total_distinct_items": int(len(df)),
             "top_3_selling_items": top_items
@@ -1094,7 +1104,579 @@ def check_perishable_risk(store_nbr: int) -> Dict[str, Any]:
 
 
 # ======================================================================
-# 7. MAPPING DICTIONARY & DISPATCHER
+# 7. NHÓM PHÂN TÍCH TÀI CHÍNH FP&A (methodology: run-fpa skills)
+# ======================================================================
+
+def analyze_gross_margin(store_nbr: Optional[int] = None, months: int = 3,
+                         _allowed_stores: Optional[frozenset] = None) -> Dict[str, Any]:
+    """
+    Biên lợi nhuận gộp (direct margin - cost-profitability): doanh thu − trả hàng − COGS.
+    Có store_nbr: chuỗi biên gộp theo tháng + biến động pp. Không: xếp hạng biên gộp
+    các cửa hàng trong phạm vi user.
+    """
+    conn = None
+    try:
+        months = max(1, min(int(months or 3), 12))
+        conn = get_db_connection()
+        if not _table_exists(conn, "agg_daily_business"):
+            return {"status": "error",
+                    "message": "Chưa có bảng agg_daily_business trong DB. Chạy một lần: "
+                               "python backend/scripts/build_business_cache.py"}
+        scope_sql, params, denied = _scope_filter_sql(store_nbr, _allowed_stores)
+        if denied:
+            return denied
+        if store_nbr is not None:
+            df = pd.read_sql_query(f"""
+                SELECT strftime('%Y-%m', date) AS month,
+                       ROUND(SUM(revenue), 2) AS revenue,
+                       ROUND(SUM(returns), 2) AS returns,
+                       ROUND(SUM(cogs), 2) AS cogs
+                FROM agg_daily_business WHERE 1=1{scope_sql}
+                GROUP BY month ORDER BY month DESC LIMIT ?
+            """, conn, params=[*params, months])
+            if df.empty:
+                return {"status": "error", "message": f"Không có dữ liệu cho cửa hàng {store_nbr}."}
+            rows = []
+            for _, r in df.iterrows():  # mới nhất trước -> đảo để cũ trước
+                rev, ret, cogs = float(r["revenue"]), float(r["returns"]), float(r["cogs"])
+                gp = rev - ret - cogs
+                rows.append({"month": r["month"], "revenue_usd": rev, "returns_usd": ret,
+                             "cogs_usd": cogs, "gross_profit_usd": round(gp, 2),
+                             "gross_margin_pct": round(gp / rev * 100, 2) if rev > 0 else None})
+            result = {"store_nbr": int(store_nbr), "monthly_margin_oldest_first": rows,
+                      "formula": "gross_profit = revenue - returns - cogs; margin = gp / revenue"}
+            if len(rows) >= 2:
+                result["margin_change_pp_vs_prev_month"] = round(
+                    rows[-1]["gross_margin_pct"] - rows[-2]["gross_margin_pct"], 2)
+            return result
+
+        # Không chỉ định cửa hàng: xếp hạng biên gộp theo cửa hàng trong cửa sổ N tháng
+        window_sql = (" AND date >= date((SELECT MAX(date) FROM agg_daily_business), "
+                      f"'-{months} month')")
+        df = pd.read_sql_query(f"""
+            SELECT store_nbr,
+                   ROUND(SUM(revenue), 2) AS revenue,
+                   ROUND(SUM(returns), 2) AS returns,
+                   ROUND(SUM(cogs), 2) AS cogs
+            FROM agg_daily_business WHERE 1=1{scope_sql}{window_sql}
+            GROUP BY store_nbr
+        """, conn, params=params)
+        if df.empty:
+            return {"status": "error", "message": "Không có dữ liệu cho phạm vi này."}
+        df["gross_profit_usd"] = (df["revenue"] - df["returns"] - df["cogs"]).round(2)
+        df["gross_margin_pct"] = (df["gross_profit_usd"] / df["revenue"] * 100).round(2)
+        df = df.sort_values("gross_margin_pct", ascending=False)
+        return {
+            "window_months": months,
+            "store_margin_ranking_highest_first": df.head(10).to_dict(orient="records"),
+            "formula": "gross_profit = revenue - returns - cogs; margin = gp / revenue",
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_gross_margin: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def analyze_revenue_change(store_nbr: int, months: int = 2) -> Dict[str, Any]:
+    """
+    Phân tách biến động doanh thu (budget-variance, price/volume decomposition):
+    Volume = (Q_a − Q_b) × P_b với Q = số hóa đơn (daily_transactions);
+    Rate   = (P_a − P_b) × Q_a với P = giá trị trung bình mỗi hóa đơn.
+    Bridge 2 nhân tố đóng về 0 đúng theo construction - residual chỉ là sai số làm tròn.
+    """
+    conn = None
+    try:
+        months = max(2, min(int(months or 2), 6))
+        conn = get_db_connection()
+        if not _table_exists(conn, "agg_daily_business"):
+            return {"status": "error",
+                    "message": "Chưa có bảng agg_daily_business trong DB. Chạy một lần: "
+                               "python backend/scripts/build_business_cache.py"}
+        df = pd.read_sql_query("""
+            SELECT strftime('%Y-%m', b.date) AS month,
+                   ROUND(SUM(b.revenue), 2) AS revenue,
+                   SUM(COALESCE(t.n_invoices, 0)) AS invoices
+            FROM agg_daily_business b
+            LEFT JOIN daily_transactions t ON t.date = b.date AND t.store_nbr = b.store_nbr
+            WHERE b.store_nbr = ?
+            GROUP BY month ORDER BY month DESC LIMIT ?
+        """, conn, params=[int(store_nbr), months])
+        if len(df) < 2:
+            return {"status": "error",
+                    "message": f"Cần ít nhất 2 tháng dữ liệu để phân tách (cửa hàng {store_nbr} chỉ có {len(df)})."}
+
+        bridges = []
+        rows = list(df.itertuples(index=False))  # mới nhất trước
+        for newer, older in zip(rows, rows[1:]):
+            rev_a, rev_b = float(newer.revenue), float(older.revenue)
+            q_a, q_b = float(newer.invoices), float(older.invoices)
+            p_a = rev_a / q_a if q_a > 0 else 0.0
+            p_b = rev_b / q_b if q_b > 0 else 0.0
+            delta = rev_a - rev_b
+            volume_effect = (q_a - q_b) * p_b
+            ticket_effect = (p_a - p_b) * q_a
+            residual = delta - volume_effect - ticket_effect
+            bridges.append({
+                "month_newer": newer.month, "month_older": older.month,
+                "revenue_newer_usd": rev_a, "revenue_older_usd": rev_b,
+                "revenue_change_usd": round(delta, 2),
+                "volume_effect_usd": round(volume_effect, 2),
+                "invoice_count_newer": int(q_a), "invoice_count_older": int(q_b),
+                "avg_ticket_newer_usd": round(p_a, 2), "avg_ticket_older_usd": round(p_b, 2),
+                "ticket_effect_usd": round(ticket_effect, 2),
+                "residual_usd": round(residual, 2),
+                "verdict": ("Doanh thu TĂNG - chủ yếu do lượt khách" if delta > 0 and abs(volume_effect) >= abs(ticket_effect)
+                            else "Doanh thu TĂNG - chủ yếu do giá trị mỗi hóa đơn" if delta > 0
+                            else "Doanh thu GIẢM - chủ yếu do lượt khách" if abs(volume_effect) >= abs(ticket_effect)
+                            else "Doanh thu GIẢM - chủ yếu do giá trị mỗi hóa đơn"),
+            })
+        return {
+            "store_nbr": int(store_nbr),
+            "formula": "volume_effect = (Q_a - Q_b) x P_b; ticket_effect = (P_a - P_b) x Q_a; "
+                       "Q = số hóa đơn, P = doanh thu / hóa đơn",
+            "bridges_oldest_pair_first": list(reversed(bridges)),
+            "note": "Bridge 2 nhân tố đóng đúng về tổng biến động (residual chỉ là làm tròn).",
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_revenue_change: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def benchmark_store_vs_peers(store_nbr: int, months: int = 3,
+                             _allowed_stores: Optional[frozenset] = None) -> Dict[str, Any]:
+    """
+    Benchmark nội bộ (peer-benchmark): so cửa hàng với trung bình các cửa hàng
+    cùng TYPE trong phạm vi user (không tính chính nó) về doanh thu, biên gộp,
+    giá trị mỗi hóa đơn. Peers lọc theo _allowed_stores - không rò rỉ ngoài phạm vi.
+    """
+    conn = None
+    try:
+        months = max(1, min(int(months or 3), 12))
+        conn = get_db_connection()
+        if not _table_exists(conn, "agg_daily_business"):
+            return {"status": "error",
+                    "message": "Chưa có bảng agg_daily_business trong DB. Chạy một lần: "
+                               "python backend/scripts/build_business_cache.py"}
+        me = conn.execute("SELECT store_nbr, city, type, cluster FROM stores WHERE store_nbr = ?",
+                          (int(store_nbr),)).fetchone()
+        if me is None:
+            return {"status": "error", "message": f"Không tồn tại cửa hàng {store_nbr}."}
+
+        peer_scope_sql, peer_params, denied = _scope_filter_sql(None, _allowed_stores)
+        if denied:
+            return denied
+        peer_scope_sql = peer_scope_sql.replace(" AND store_nbr", " AND s.store_nbr", 1)
+        peers = pd.read_sql_query(f"""
+            SELECT s.store_nbr FROM stores s WHERE s.type = ? AND s.store_nbr != ?{peer_scope_sql}
+        """, conn, params=[me["type"], int(store_nbr), *peer_params])
+        if peers.empty:
+            return {"status": "error",
+                    "message": f"Không có cửa hàng cùng loại {me['type']} nào trong phạm vi để so sánh."}
+        peer_ids = [int(x) for x in peers["store_nbr"].tolist()]
+        peer_marks = ",".join("?" * len(peer_ids))
+
+        window_sql = (" AND b.date >= date((SELECT MAX(date) FROM agg_daily_business), "
+                      f"'-{months} month')")
+        def _metrics(store_filter_sql: str, params_: list) -> Dict[str, float]:
+            row = conn.execute(f"""
+                SELECT COALESCE(SUM(b.revenue), 0) AS revenue,
+                       COALESCE(SUM(b.returns), 0) AS returns,
+                       COALESCE(SUM(b.cogs), 0) AS cogs,
+                       COALESCE(SUM(t.n_invoices), 0) AS invoices
+                FROM agg_daily_business b
+                LEFT JOIN daily_transactions t ON t.date = b.date AND t.store_nbr = b.store_nbr
+                WHERE 1=1{store_filter_sql}{window_sql}
+            """, params_).fetchone()
+            rev, ret, cogs = float(row[0]), float(row[1]), float(row[2])
+            inv = float(row[3])
+            gp = rev - ret - cogs
+            return {"revenue_usd": round(rev, 2), "gross_profit_usd": round(gp, 2),
+                    "gross_margin_pct": round(gp / rev * 100, 2) if rev > 0 else 0.0,
+                    "invoices": int(inv),
+                    "avg_ticket_usd": round(rev / inv, 2) if inv > 0 else 0.0}
+
+        mine = _metrics(" AND b.store_nbr = ?", [int(store_nbr)])
+        peer = _metrics(f" AND b.store_nbr IN ({peer_marks})", peer_ids)
+
+        def _vs(metric: str) -> Dict[str, Any]:
+            m = mine[metric]
+            p = peer[metric]
+            diff_pct = round((m - p) / p * 100, 2) if p else None
+            return {"metric": metric, "store": m, "peer_avg": p, "vs_peer_avg_pct": diff_pct}
+
+        return {
+            "store_nbr": int(store_nbr), "city": me["city"], "type": me["type"],
+            "cluster": me["cluster"], "peer_type": me["type"], "peer_count": len(peer_ids),
+            "window_months": months,
+            "store_totals": mine,
+            "peer_avg_totals": peer,
+            "comparison": [_vs("revenue_usd"), _vs("gross_margin_pct"), _vs("avg_ticket_usd"),
+                           _vs("gross_profit_usd")],
+            "note": "peer_avg chỉ tính các cửa hàng cùng loại trong phạm vi truy cập của bạn "
+                    "(không gồm chính cửa hàng này), chia đều theo số cửa hàng.",
+        }
+    except Exception as e:
+        logger.error(f"Error in benchmark_store_vs_peers: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def analyze_reorder_profitability(store_nbr: int, top_n: int = 5) -> Dict[str, Any]:
+    """
+    Cơ hội lợi nhuận gộp tăng thêm (finance-bp decision support): với các mặt hàng
+    dự báo 16 ngày vượt tồn kho, nếu đặt bổ sung đủ nhu cầu thì thu thêm bao nhiêu
+    theo giá tham chiếu family_prices: gap x unit_price x (1 - cost_ratio).
+    """
+    conn = None
+    try:
+        top_n = max(1, min(int(top_n or 5), 10))
+        conn = get_db_connection()
+        if not _table_exists(conn, "family_prices"):
+            return {"status": "error",
+                    "message": "Chưa có bảng family_prices trong DB. Chạy một lần: "
+                               "python backend/scripts/build_business_cache.py"}
+        # Tổng hợp forecasts TRƯỚC trong subquery (đi qua index store_nbr) rồi mới
+        # join - nếu join thẳng planner có thể quét toàn bộ 3.4M dòng forecasts (~40s).
+        df = pd.read_sql_query("""
+            SELECT agg.item_nbr, it.family, agg.forecast_16d,
+                   i.current_stock,
+                   fp.unit_price, fp.cost_ratio
+            FROM (
+                SELECT item_nbr, ROUND(SUM(predicted_sales), 2) AS forecast_16d
+                FROM forecasts WHERE store_nbr = ?
+                GROUP BY item_nbr
+            ) agg
+            JOIN inventory i ON i.store_nbr = ? AND i.item_nbr = agg.item_nbr
+            JOIN items it ON agg.item_nbr = it.item_nbr
+            JOIN family_prices fp ON fp.family = it.family
+            WHERE agg.forecast_16d > i.current_stock
+        """, conn, params=[int(store_nbr), int(store_nbr)])
+        if df.empty:
+            return {"status": "success",
+                    "message": f"Không có mặt hàng nào tại Store {store_nbr} cần đặt bổ sung "
+                               "(dự báo 16 ngày đều trong phạm vi tồn kho)."}
+        df["gap_units"] = (df["forecast_16d"] - df["current_stock"]).round(2)
+        df["gross_margin_per_unit_usd"] = (df["unit_price"] * (1 - df["cost_ratio"])).round(4)
+        df["est_incremental_profit_usd"] = (df["gap_units"] * df["gross_margin_per_unit_usd"]).round(2)
+        df = df.sort_values("est_incremental_profit_usd", ascending=False)
+        total = float(df["est_incremental_profit_usd"].sum())
+        return {
+            "store_nbr": int(store_nbr),
+            "items_needing_reorder": int(len(df)),
+            "top_opportunities": df.head(top_n).to_dict(orient="records"),
+            "total_est_incremental_profit_usd": round(total, 2),
+            "formula": "est_profit = (forecast_16d - current_stock) x unit_price x (1 - cost_ratio)",
+            "note": "Ước tính theo GIÁ THAM CHIẾU từng ngành hàng (dataset không có giá thật) - "
+                    "dùng để xếp hạng ưu tiên đặt hàng, không phải con số cam kết.",
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_reorder_profitability: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+# ======================================================================
+# 7c. NHÓM QUẢN TRỊ BÁN LẺ: TỒN KHO - MERCHANDISING (dữ liệu cache, không quét lớn)
+# ======================================================================
+
+def _cost_price_expr(alias: str = "fp") -> str:
+    """Biểu thức giá vốn tham chiếu mỗi unit: unit_price x cost_ratio."""
+    return f"({alias}.unit_price * {alias}.cost_ratio)"
+
+
+def analyze_inventory_health(store_nbr: int, months: int = 3) -> Dict[str, Any]:
+    """
+    Sức khỏe tồn kho: giá trị tồn (giá vốn tham chiếu), DOH (số ngày tồn che phủ
+    doanh thu), vòng quay năm ước tính, và danh sách overstock (DOH > 30 ngày).
+    """
+    conn = None
+    try:
+        months = max(1, min(int(months or 3), 12))
+        conn = get_db_connection()
+        if not _table_exists(conn, "family_prices"):
+            return {"status": "error",
+                    "message": "Chưa có bảng family_prices trong DB. Chạy một lần: "
+                               "python backend/scripts/build_business_cache.py"}
+
+        # Tổng giá trị tồn kho theo giá vốn tham chiếu
+        row = conn.execute(f"""
+            SELECT COALESCE(SUM(i.current_stock * {_cost_price_expr()}), 0)
+            FROM inventory i
+            JOIN items it ON i.item_nbr = it.item_nbr
+            JOIN family_prices fp ON fp.family = it.family
+            WHERE i.store_nbr = ?
+        """, (int(store_nbr),)).fetchone()
+        stock_value = float(row[0] or 0)
+
+        # COGS bình quân ngày trong cửa sổ `months` tháng
+        cogs_row = conn.execute(f"""
+            SELECT COALESCE(SUM(cogs), 0), COUNT(DISTINCT date)
+            FROM agg_daily_business
+            WHERE store_nbr = ? AND date >= date((SELECT MAX(date) FROM agg_daily_business), '-{months} month')
+        """, (int(store_nbr),)).fetchone()
+        total_cogs, active_days = float(cogs_row[0] or 0), int(cogs_row[1] or 0)
+        if active_days == 0 or total_cogs <= 0:
+            return {"status": "error", "message": f"Không có dữ liệu COGS cho cửa hàng {store_nbr}."}
+        daily_cogs = total_cogs / active_days
+        doh = stock_value / daily_cogs if daily_cogs > 0 else None
+        turnover = (total_cogs / months * 12 / stock_value) if stock_value > 0 else None
+
+        # Overstock: mặt hàng có DOH riêng > 30 ngày (nhu cầu ngày = forecast_16d / 16)
+        over = pd.read_sql_query(f"""
+            SELECT agg.item_nbr, it.family, agg.forecast_16d, i.current_stock,
+                   ROUND(i.current_stock * {_cost_price_expr()}, 2) AS stock_value_usd,
+                   ROUND(i.current_stock / (agg.forecast_16d / 16.0), 1) AS doh_days
+            FROM (
+                SELECT item_nbr, ROUND(SUM(predicted_sales), 2) AS forecast_16d
+                FROM forecasts WHERE store_nbr = ?
+                GROUP BY item_nbr
+            ) agg
+            JOIN inventory i ON i.store_nbr = ? AND i.item_nbr = agg.item_nbr
+            JOIN items it ON agg.item_nbr = it.item_nbr
+            JOIN family_prices fp ON fp.family = it.family
+            WHERE i.current_stock > 0 AND agg.forecast_16d > 0
+              AND i.current_stock / (agg.forecast_16d / 16.0) > 30
+            ORDER BY stock_value_usd DESC
+            LIMIT 3
+        """, conn, params=[int(store_nbr), int(store_nbr)])
+
+        return {
+            "store_nbr": int(store_nbr),
+            "window_months": months,
+            "stock_value_usd": round(stock_value, 2),
+            "daily_cogs_usd": round(daily_cogs, 2),
+            "days_on_hand": round(doh, 1) if doh else None,
+            "turnover_per_year_est": round(turnover, 2) if turnover else None,
+            "overstock_count_doh_gt_30": int(len(over)),
+            "top_overstock_items": over.to_dict(orient="records"),
+            "formula": "stock_value = stock x unit_price x cost_ratio (giá vốn tham chiếu); "
+                       "DOH = stock_value / daily_cogs; turnover = (cogs/tháng x 12) / stock_value",
+            "note": "Giá vốn là GIÁ THAM CHIẾU theo ngành hàng (dataset không có giá thật).",
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_inventory_health: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def find_dead_stock(store_nbr: int, top_n: int = 10) -> Dict[str, Any]:
+    """
+    Hàng chết theo 2 định nghĩa:
+    (a) chưa từng bán ở cửa hàng này (unit_sales trống/0 toàn kỳ lịch sử);
+    (b) chết gần đây toàn chuỗi (sku_stats.avg_daily_45d ≈ 0 - 45 ngày cuối không bán).
+    Giá trị vốn đọng = stock x giá vốn tham chiếu.
+    """
+    conn = None
+    try:
+        top_n = max(1, min(int(top_n or 10), 15))
+        conn = get_db_connection()
+        for tbl in ("agg_item_store_sales", "sku_stats"):
+            if not _table_exists(conn, tbl):
+                return {"status": "error",
+                        "message": f"Chưa có bảng {tbl} trong DB. Chạy: "
+                                   "python backend/scripts/build_sales_cache.py / build_sku_stats.py"}
+
+        never_sold = pd.read_sql_query(f"""
+            SELECT i.item_nbr, it.family, i.current_stock,
+                   ROUND(i.current_stock * {_cost_price_expr()}, 2) AS stock_value_usd
+            FROM inventory i
+            LEFT JOIN agg_item_store_sales a ON a.store_nbr = i.store_nbr AND a.item_nbr = i.item_nbr
+            JOIN items it ON i.item_nbr = it.item_nbr
+            JOIN family_prices fp ON fp.family = it.family
+            WHERE i.store_nbr = ? AND i.current_stock > 0
+              AND (a.unit_sales IS NULL OR a.unit_sales = 0)
+            ORDER BY stock_value_usd DESC LIMIT ?
+        """, conn, params=[int(store_nbr), top_n])
+
+        recent_dead = pd.read_sql_query(f"""
+            SELECT i.item_nbr, it.family, i.current_stock,
+                   ss.avg_daily_45d,
+                   ROUND(i.current_stock * {_cost_price_expr()}, 2) AS stock_value_usd
+            FROM inventory i
+            JOIN sku_stats ss ON ss.item_nbr = i.item_nbr
+            JOIN items it ON i.item_nbr = it.item_nbr
+            JOIN family_prices fp ON fp.family = it.family
+            WHERE i.store_nbr = ? AND i.current_stock > 0
+              AND COALESCE(ss.avg_daily_45d, 0) < 0.01
+            ORDER BY stock_value_usd DESC LIMIT ?
+        """, conn, params=[int(store_nbr), top_n])
+
+        return {
+            "store_nbr": int(store_nbr),
+            "never_sold_here_count": int(len(never_sold)),
+            "never_sold_here": never_sold.to_dict(orient="records"),
+            "recent_dead_chainwide_count": int(len(recent_dead)),
+            "recent_dead_chainwide": recent_dead.to_dict(orient="records"),
+            "note": "(a) chưa từng bán ở cửa hàng này trong toàn bộ lịch sử; "
+                    "(b) trung bình 45 ngày gần nhất toàn chuỗi ≈ 0. Giá vốn là giá tham chiếu.",
+        }
+    except Exception as e:
+        logger.error(f"Error in find_dead_stock: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_abc_analysis(store_nbr: int, top_n: int = 5) -> Dict[str, Any]:
+    """
+    Phân loại ABC THEO CỬA HÀNG: giá trị bán = unit_sales x giá bán tham chiếu;
+    cộng dồn A ≤ 80%, B ≤ 95%, C còn lại (khớp định nghĩa abc_class của sku_stats).
+    """
+    conn = None
+    try:
+        top_n = max(1, min(int(top_n or 5), 10))
+        conn = get_db_connection()
+        if not _table_exists(conn, "agg_item_store_sales"):
+            return {"status": "error",
+                    "message": "Chưa có bảng agg_item_store_sales trong DB. Chạy một lần: "
+                               "python backend/scripts/build_sales_cache.py"}
+        df = pd.read_sql_query(f"""
+            SELECT a.item_nbr, it.family,
+                   ROUND(a.unit_sales * fp.unit_price, 2) AS sales_value_usd
+            FROM agg_item_store_sales a
+            JOIN items it ON a.item_nbr = it.item_nbr
+            JOIN family_prices fp ON fp.family = it.family
+            WHERE a.store_nbr = ? AND a.unit_sales > 0
+            ORDER BY sales_value_usd DESC
+        """, conn, params=[int(store_nbr)])
+        if df.empty:
+            return {"status": "error", "message": f"Không có dữ liệu bán hàng cho cửa hàng {store_nbr}."}
+        total = float(df["sales_value_usd"].sum())
+        df["cum_share_pct"] = (df["sales_value_usd"].cumsum() / total * 100).round(2)
+        df["abc_class"] = df["cum_share_pct"].apply(lambda c: "A" if c <= 80 else ("B" if c <= 95 else "C"))
+        summary = {}
+        for cls in ("A", "B", "C"):
+            sub = df[df["abc_class"] == cls]
+            summary[cls] = {
+                "item_count": int(len(sub)),
+                "value_share_pct": round(float(sub["sales_value_usd"].sum()) / total * 100, 2) if len(sub) else 0.0,
+                "top_items": sub.head(top_n)[["item_nbr", "family", "sales_value_usd", "cum_share_pct"]].to_dict(orient="records"),
+            }
+        return {
+            "store_nbr": int(store_nbr),
+            "total_sales_value_usd": round(total, 2),
+            "classes": summary,
+            "thresholds": "A ≤ 80% giá trị cộng dồn, B ≤ 95%, C còn lại (giá bán tham chiếu)",
+        }
+    except Exception as e:
+        logger.error(f"Error in get_abc_analysis: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def analyze_weekly_pattern(store_nbr: int, weeks: int = 12) -> Dict[str, Any]:
+    """
+    Mẫu tuần: doanh thu bình quân theo ngày trong tuần (cửa sổ N tuần) - dùng để
+    xếp ca nhân viên và chọn ngày chạy khuyến mãi.
+    """
+    conn = None
+    try:
+        weeks = max(2, min(int(weeks or 12), 52))
+        conn = get_db_connection()
+        if not _table_exists(conn, "agg_daily_business"):
+            return {"status": "error",
+                    "message": "Chưa có bảng agg_daily_business trong DB. Chạy một lần: "
+                               "python backend/scripts/build_business_cache.py"}
+        df = pd.read_sql_query(f"""
+            SELECT CAST(strftime('%w', date) AS INTEGER) AS dow,
+                   ROUND(AVG(revenue), 2) AS avg_daily_revenue_usd,
+                   COUNT(*) AS days_observed
+            FROM agg_daily_business
+            WHERE store_nbr = ?
+              AND date >= date((SELECT MAX(date) FROM agg_daily_business), '-{weeks * 7} day')
+            GROUP BY dow ORDER BY dow
+        """, conn, params=[int(store_nbr)])
+        if df.empty:
+            return {"status": "error", "message": f"Không có dữ liệu cho cửa hàng {store_nbr}."}
+        dow_names = {0: "Chủ nhật", 1: "Thứ 2", 2: "Thứ 3", 3: "Thứ 4",
+                     4: "Thứ 5", 5: "Thứ 6", 6: "Thứ 7"}
+        df["day"] = df["dow"].map(dow_names)
+        weekend_avg = float(df[df["dow"].isin([0, 6])]["avg_daily_revenue_usd"].mean())
+        weekday_avg = float(df[~df["dow"].isin([0, 6])]["avg_daily_revenue_usd"].mean())
+        best = df.loc[df["avg_daily_revenue_usd"].idxmax()]
+        worst = df.loc[df["avg_daily_revenue_usd"].idxmin()]
+        return {
+            "store_nbr": int(store_nbr),
+            "window_weeks": weeks,
+            "by_day_of_week": df[["day", "avg_daily_revenue_usd", "days_observed"]].to_dict(orient="records"),
+            "weekend_avg_usd": round(weekend_avg, 2),
+            "weekday_avg_usd": round(weekday_avg, 2),
+            "weekend_lift_pct": round((weekend_avg - weekday_avg) / weekday_avg * 100, 2) if weekday_avg > 0 else None,
+            "best_day": best["day"], "worst_day": worst["day"],
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_weekly_pattern: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+def compare_family_mix(store_nbr: int) -> Dict[str, Any]:
+    """
+    Cơ cấu ngành hàng: tỷ trọng giá trị bán theo ngành của cửa hàng so với toàn
+    chuỗi - tìm ngành over-indexed (nên đẩy mạnh) / under-indexed (đang thiếu).
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not _table_exists(conn, "agg_item_store_sales"):
+            return {"status": "error",
+                    "message": "Chưa có bảng agg_item_store_sales trong DB. Chạy một lần: "
+                               "python backend/scripts/build_sales_cache.py"}
+        def _mix(where: str, params: list) -> Dict[str, float]:
+            df = pd.read_sql_query(f"""
+                SELECT it.family, SUM(a.unit_sales * fp.unit_price) AS value_usd
+                FROM agg_item_store_sales a
+                JOIN items it ON a.item_nbr = it.item_nbr
+                JOIN family_prices fp ON fp.family = it.family
+                {where}
+                GROUP BY it.family
+            """, conn, params=params)
+            total = float(df["value_usd"].sum())
+            return {r["family"]: float(r["value_usd"]) / total * 100 for _, r in df.iterrows()} if total > 0 else {}
+
+        store_mix = _mix("WHERE a.store_nbr = ?", [int(store_nbr)])
+        chain_mix = _mix("", [])
+        if not store_mix or not chain_mix:
+            return {"status": "error", "message": f"Không đủ dữ liệu cơ cấu ngành cho cửa hàng {store_nbr}."}
+        rows = []
+        for fam, s_share in store_mix.items():
+            c_share = chain_mix.get(fam, 0.0)
+            rows.append({"family": fam, "store_share_pct": round(s_share, 2),
+                         "chain_share_pct": round(c_share, 2),
+                         "diff_pp": round(s_share - c_share, 2)})
+        rows.sort(key=lambda r: r["diff_pp"])
+        return {
+            "store_nbr": int(store_nbr),
+            "under_indexed_worst_first": [r for r in rows if r["diff_pp"] < -1.0][:8],
+            "over_indexed_top_first": [r for r in reversed(rows) if r["diff_pp"] > 1.0][:8],
+            "note": "diff_pp = tỷ trọng cửa hàng - tỷ trọng chuỗi (điểm %); giá trị theo giá bán tham chiếu.",
+        }
+    except Exception as e:
+        logger.error(f"Error in compare_family_mix: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        if conn:
+            conn.close()
+
+
+# ======================================================================
+# 7b. MAPPING DICTIONARY & DISPATCHER
 # ======================================================================
 
 AVAILABLE_TOOLS = {
@@ -1117,6 +1699,15 @@ AVAILABLE_TOOLS = {
     "get_store_traffic": get_store_traffic,
     "evaluate_promotion_impact": evaluate_promotion_impact,
     "check_perishable_risk": check_perishable_risk,
+    "analyze_gross_margin": analyze_gross_margin,
+    "analyze_revenue_change": analyze_revenue_change,
+    "benchmark_store_vs_peers": benchmark_store_vs_peers,
+    "analyze_reorder_profitability": analyze_reorder_profitability,
+    "analyze_inventory_health": analyze_inventory_health,
+    "find_dead_stock": find_dead_stock,
+    "get_abc_analysis": get_abc_analysis,
+    "analyze_weekly_pattern": analyze_weekly_pattern,
+    "compare_family_mix": compare_family_mix,
 }
 
 
@@ -1124,308 +1715,102 @@ AVAILABLE_TOOLS = {
 # 8. JSON SCHEMAS CHO GROQ / QWEN 3.6 FUNCTION CALLING
 # ======================================================================
 
+def _fn(name: str, desc: str, props: dict, req: list = None) -> dict:
+    """Schema function-calling gọn: props = {tên: (type, mô tả ngắn)} - tiết kiệm token TPM."""
+    return {"type": "function", "function": {
+        "name": name,
+        "description": desc,
+        "parameters": {
+            "type": "object",
+            "properties": {k: {"type": t, "description": d} for k, (t, d) in props.items()},
+            **({"required": req} if req else {}),
+        },
+    }}
+
+
+_STORE = ("integer", "Mã cửa hàng.")
+_ITEM = ("integer", "Mã mặt hàng.")
+_MONTHS = ("integer", "Số tháng gần nhất (mặc định 3).")
+_TOPN = ("integer", "Số mặt hàng cần xem (mặc định 5).")
+
 GROQ_TOOL_DEFINITIONS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_sales_summary",
-            "description": "Lấy tổng doanh số dự báo trong N ngày tới của một cửa hàng hoặc toàn bộ hệ thống.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng (bỏ trống nếu muốn xem toàn chuỗi)."},
-                    "days": {"type": "integer", "description": "Số ngày dự báo muốn xem (mặc định là 7 ngày)."}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_stockout_risk",
-            "description": "Kiểm tra danh sách các mặt hàng có nguy cơ hết hàng, thiếu hụt tồn kho tại một cửa hàng.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã số cửa hàng cần kiểm tra."}
-                },
-                "required": ["store_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calculate_reorder_point",
-            "description": "Tính điểm đặt hàng lại (ROP) và mức tồn kho an toàn cho một mặt hàng cụ thể tại một cửa hàng.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã số cửa hàng."},
-                    "item_nbr": {"type": "integer", "description": "Mã số mặt hàng."}
-                },
-                "required": ["store_nbr", "item_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calculate_purchase_target",
-            "description": "Tính số lượng cần đặt mua thêm để đáp ứng nhu cầu 16 ngày tới.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng."}
-                },
-                "required": ["store_nbr", "item_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "simulate_demand_multiplier",
-            "description": "Mô phỏng thay đổi tồn kho khi doanh số tăng hoặc giảm theo hệ số (What-if scenario).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng."},
-                    "multiplier": {"type": "number", "description": "Hệ số nhân (Ví dụ 1.5 là tăng 50%, 0.8 là giảm 20%)."}
-                },
-                "required": ["store_nbr", "item_nbr", "multiplier"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "evaluate_stockout_loss",
-            "description": "Ước tính số lượng bán mất và doanh thu thất thoát (USD) nếu một mặt hàng bị đứt hàng trong N ngày.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng."},
-                    "out_of_stock_days": {"type": "integer", "description": "Số ngày hết kho cần mô phỏng thiệt hại."}
-                },
-                "required": ["store_nbr", "item_nbr", "out_of_stock_days"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_scenario_analysis",
-            "description": (
-                "Chạy kịch bản what-if cho một NGÀNH HÀNG (family) tại một cửa hàng: "
-                "sửa số liệu (hệ số nhu cầu, khuyến mãi, giá dầu, lưu lượng khách, "
-                "sự kiện bất ngờ, tồn kho) -> dự báo lại bằng mô hình thật 16 ngày -> "
-                "so với hiện tại. Kết quả trả sẵn trường `analysis` (phân tích) và "
-                "`recommendation` (đề xuất) - trình bày lại nguyên trạng, KHÔNG tự tính lại số."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "family": {"type": "string", "description": "Tên ngành hàng, VD: GROCERY I, BEVERAGES."},
-                    "demand_multiplier": {"type": "number", "description": "Hệ số nhu cầu (1.0 = giữ nguyên, 1.5 = tăng 50%, 0.8 = giảm 20%)."},
-                    "promo_days": {"type": "integer", "description": "Số ngày khuyến mãi trong kỳ 0-16 (bỏ trống = theo lịch thật)."},
-                    "oil_price": {"type": "number", "description": "Giá dầu USD (bỏ trống = giá thật)."},
-                    "traffic_change_pct": {"type": "number", "description": "% thay đổi lưu lượng khách, VD -20 hoặc 30 (bỏ trống = giữ nguyên)."},
-                    "event_type": {"type": "string", "enum": ["none", "holiday", "earthquake"], "description": "Sự kiện bất ngờ: none/holiday (ngày lễ)/earthquake (thiên tai)."},
-                    "event_days": {"type": "integer", "description": "Số ngày diễn ra sự kiện (0 = không có)."},
-                    "stock_override": {"type": "number", "description": "Tổng tồn kho muốn giả lập (bỏ trống = tồn thật của ngành)."},
-                    "lead_time_override": {"type": "number", "description": "Lead time giả lập tính bằng ngày (bỏ trống = giá trị thật)."},
-                    "horizon_days": {"type": "integer", "description": "Số ngày dự báo 7-16 (mặc định 16)."}
-                },
-                "required": ["store_nbr", "family"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recommend_slow_mover_strategy",
-            "description": "Phát hiện các mặt hàng bán chậm, đọng vốn cao và đề xuất mức giảm giá để xả hàng tồn.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."}
-                },
-                "required": ["store_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_cross_sell_items",
-            "description": "Tìm các sản phẩm bán chạy cùng ngành hàng để lập chương trình bán kèm (Cross-selling).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "item_nbr": {"type": "integer", "description": "Mã mặt hàng chính."}
-                },
-                "required": ["store_nbr", "item_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_cluster_trends",
-            "description": "So sánh xu hướng và tổng doanh số giữa 2 cụm cửa hàng (Cluster).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "cluster_1": {"type": "integer", "description": "Mã cụm 1."},
-                    "cluster_2": {"type": "integer", "description": "Mã cụm 2."}
-                },
-                "required": ["cluster_1", "cluster_2"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_monthly_revenue",
-            "description": "Lấy DOANH THU THỰC TẾ (USD) theo tháng của một cửa hàng hoặc toàn hệ thống. "
-                           "Dùng khi hỏi về doanh thu các kỳ ĐÃ QUA (tháng này, tháng trước, 3 tháng gần nhất...). "
-                           "Kết quả là dữ liệu lịch sử - luôn đọc 'data_period' để nêu đúng kỳ.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng (bỏ trống = toàn hệ thống trong phạm vi)."},
-                    "months": {"type": "integer", "description": "Số tháng gần nhất muốn xem (mặc định 1, tối đa 12)."}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_stores_revenue",
-            "description": "So sánh doanh thu thực tế giữa 2 cửa hàng theo các tháng gần nhất và kết luận cửa hàng nào mạnh hơn.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_1": {"type": "integer", "description": "Mã cửa hàng thứ nhất."},
-                    "store_2": {"type": "integer", "description": "Mã cửa hàng thứ hai."},
-                    "months": {"type": "integer", "description": "Số tháng gần nhất dùng để so sánh (mặc định 3)."}
-                },
-                "required": ["store_1", "store_2"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_top_selling_items",
-            "description": "Top các mặt hàng bán chạy THỰC TẾ theo tổng số lượng bán lịch sử (không phải dự báo). "
-                           "Dùng cho câu hỏi 'mặt hàng nào bán chạy nhất', 'sản phẩm chủ lực'.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng (bỏ trống = toàn hệ thống trong phạm vi)."},
-                    "top_n": {"type": "integer", "description": "Số lượng mặt hàng cần xem (mặc định 5, tối đa 20)."}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_family_forecast",
-            "description": "Lấy dự báo doanh số theo NGÀY của một ngành hàng (family, VD: PRODUCE, GROCERY I) "
-                           "tại một cửa hàng trong N ngày đầu của chu kỳ dự báo 16 ngày.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "family": {"type": "string", "description": "Tên ngành hàng (VD: PRODUCE, MEATS, BREAD/BAKERY)."},
-                    "days": {"type": "integer", "description": "Số ngày dự báo muốn xem (mặc định 7, tối đa 16)."}
-                },
-                "required": ["store_nbr", "family"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_item_profile",
-            "description": "Xem hồ sơ chi tiết một mặt hàng: ngành hàng, dễ hỏng hay không, tồn kho và dự báo "
-                           "theo từng cửa hàng trong phạm vi, tổng số lượng bán thực tế.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "item_nbr": {"type": "integer", "description": "Mã số mặt hàng."}
-                },
-                "required": ["item_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_store_profile",
-            "description": "Thông tin cửa hàng: thành phố, loại, cụm, số mặt hàng quản lý, doanh thu tháng gần nhất "
-                           "và top ngành hàng dự báo. Nếu bỏ trống store_nbr sẽ trả về DANH SÁCH tất cả cửa hàng trong phạm vi.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng (bỏ trống = liệt kê danh sách cửa hàng)."}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_store_traffic",
-            "description": "Lượng khách ghé cửa hàng (số hóa đơn/ngày): trung bình mỗi ngày và xu hướng "
-                           "tăng/giảm % so với kỳ trước đó. Dùng cho câu hỏi về khách hàng, lượt ghé thăm.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng (bỏ trống = toàn hệ thống trong phạm vi)."},
-                    "days": {"type": "integer", "description": "Độ dài kỳ so sánh theo ngày (mặc định 30, tối đa 180)."}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "evaluate_promotion_impact",
-            "description": "Đánh giá HIỆU QUẢ KHUYẾN MÃI: so sánh doanh số trung bình ngày có khuyến mãi vs không "
-                           "trong 12 tháng lịch sử gần nhất, tính mức tăng (lift) %.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."},
-                    "family": {"type": "string", "description": "Ngành hàng cụ thể (tùy chọn, VD: PRODUCE)."}
-                },
-                "required": ["store_nbr"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_perishable_risk",
-            "description": "Danh sách mặt hàng DỄ HỎNG (rau quả, thịt, sữa...) có nhu cầu dự báo vượt tồn kho "
-                           "trong 16 ngày tới, kèm số ngày tồn kho còn che phủ.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "store_nbr": {"type": "integer", "description": "Mã cửa hàng."}
-                },
-                "required": ["store_nbr"]
-            }
-        }
-    }
+    _fn("get_sales_summary", "Tổng doanh số DỰ BÁO trong N ngày tới của một cửa hàng hoặc toàn chuỗi.",
+        {"store_nbr": _STORE, "days": ("integer", "Số ngày dự báo (mặc định 7).")}),
+    _fn("check_stockout_risk", "Mặt hàng có nguy cơ HẾT HÀNG tại một cửa hàng (dự báo 16 ngày vượt tồn).",
+        {"store_nbr": _STORE}, ["store_nbr"]),
+    _fn("calculate_reorder_point", "Điểm đặt hàng lại (ROP) và tồn kho an toàn cho 1 mặt hàng.",
+        {"store_nbr": _STORE, "item_nbr": _ITEM}, ["store_nbr", "item_nbr"]),
+    _fn("calculate_purchase_target", "Số lượng cần đặt thêm cho 1 mặt hàng theo nhu cầu 16 ngày.",
+        {"store_nbr": _STORE, "item_nbr": _ITEM}, ["store_nbr", "item_nbr"]),
+    _fn("simulate_demand_multiplier",
+        "Mô phỏng khi cầu tăng/giảm theo hệ số cho 1 mặt hàng (1.5 = +50%).",
+        {"store_nbr": _STORE, "item_nbr": _ITEM, "multiplier": ("number", "Hệ số cầu.")},
+        ["store_nbr", "item_nbr", "multiplier"]),
+    _fn("evaluate_stockout_loss", "Thiệt hại (unit + USD) nếu 1 mặt hàng đứt hàng N ngày.",
+        {"store_nbr": _STORE, "item_nbr": _ITEM, "out_of_stock_days": ("integer", "Số ngày đứt hàng.")},
+        ["store_nbr", "item_nbr", "out_of_stock_days"]),
+    _fn("run_scenario_analysis",
+        "Kịch bản what-if cho 1 NGÀNH HÀNG: sửa cầu/khuyến mãi/giá dầu/lưu lượng/sự kiện/tồn kho "
+        "-> dự báo lại bằng model thật. Kết quả có sẵn `analysis` + `recommendation`: dùng nguyên "
+        "trạng, KHÔNG tự tính lại số.",
+        {"store_nbr": _STORE, "family": ("string", "Tên ngành hàng, VD: GROCERY I."),
+         "demand_multiplier": ("number", "Hệ số cầu (bỏ trống = giữ)."),
+         "promo_days": ("integer", "Số ngày khuyến mãi 0-16 (bỏ trống = thật)."),
+         "oil_price": ("number", "Giá dầu USD (bỏ trống = thật)."),
+         "traffic_change_pct": ("number", "% thay đổi khách (bỏ trống = giữ)."),
+         "event_type": ("string", "none/holiday/earthquake."),
+         "event_days": ("integer", "Số ngày sự kiện."),
+         "stock_override": ("number", "Tồn kho giả lập (bỏ trống = thật)."),
+         "lead_time_override": ("number", "Lead time giả lập ngày."),
+         "horizon_days": ("integer", "Số ngày dự báo 7-16.")},
+        ["store_nbr", "family"]),
+    _fn("recommend_slow_mover_strategy",
+        "Mặt hàng đọng vốn (tồn > 2x nhu cầu 16 ngày) + mức giảm giá đề xuất.",
+        {"store_nbr": _STORE}, ["store_nbr"]),
+    _fn("find_cross_sell_items", "Top mặt hàng cùng ngành để bán kèm cho 1 mặt hàng.",
+        {"store_nbr": _STORE, "item_nbr": _ITEM}, ["store_nbr", "item_nbr"]),
+    _fn("compare_cluster_trends", "So tổng doanh số dự báo giữa 2 cụm cửa hàng (cluster).",
+        {"cluster_1": ("integer", "Mã cụm 1."), "cluster_2": ("integer", "Mã cụm 2.")},
+        ["cluster_1", "cluster_2"]),
+    _fn("get_monthly_revenue",
+        "DOANH THU THỰC TẾ (USD) theo tháng của kỳ ĐÃ QUA; đọc data_period để nêu đúng kỳ.",
+        {"store_nbr": _STORE, "months": ("integer", "Số tháng gần nhất (mặc định 1).")}),
+    _fn("compare_stores_revenue", "So doanh thu thực tế 2 cửa hàng theo tháng + cửa hàng mạnh hơn.",
+        {"store_1": ("integer", "Mã cửa hàng 1."), "store_2": ("integer", "Mã cửa hàng 2."),
+         "months": _MONTHS}, ["store_1", "store_2"]),
+    _fn("get_top_selling_items", "Top bán chạy THỰC TẾ theo unit (không phải dự báo).",
+        {"store_nbr": _STORE, "top_n": _TOPN}),
+    _fn("get_family_forecast", "Dự báo theo NGÀY của 1 ngành hàng (family) tại 1 cửa hàng.",
+        {"store_nbr": _STORE, "family": ("string", "Tên ngành, VD: PRODUCE."),
+         "days": ("integer", "Số ngày (mặc định 7, tối đa 16).")}, ["store_nbr", "family"]),
+    _fn("get_item_profile", "Hồ sơ 1 mặt hàng: family, dễ hỏng, tồn + dự báo theo từng cửa hàng.",
+        {"item_nbr": _ITEM}, ["item_nbr"]),
+    _fn("get_store_profile",
+        "Thông tin cửa hàng (địa điểm, loại, cụm, doanh thu tháng gần nhất); bỏ trống = danh sách cửa hàng.",
+        {"store_nbr": _STORE}),
+    _fn("get_store_traffic", "Lượt khách (số hóa đơn/ngày) + xu hướng tăng/giảm % so kỳ trước.",
+        {"store_nbr": _STORE, "days": ("integer", "Độ dài kỳ (mặc định 30).")}),
+    _fn("evaluate_promotion_impact", "Hiệu quả khuyến mãi: doanh số ngày có KM vs không + lift %.",
+        {"store_nbr": _STORE, "family": ("string", "Ngành cụ thể (tùy chọn).")}, ["store_nbr"]),
+    _fn("check_perishable_risk", "Mặt hàng DỄ HỎNG có dự báo vượt tồn trong 16 ngày tới.",
+        {"store_nbr": _STORE}, ["store_nbr"]),
+    _fn("analyze_gross_margin",
+        "Biên lợi nhuận gộp (doanh thu - trả hàng - giá vốn) theo tháng; bỏ trống store_nbr = xếp hạng cửa hàng.",
+        {"store_nbr": _STORE, "months": _MONTHS}),
+    _fn("analyze_revenue_change", "Phân tách Δdoanh thu 2 tháng: lượt khách vs giá trị mỗi hóa đơn.",
+        {"store_nbr": _STORE, "months": ("integer", "Số tháng (mặc định 2).")}, ["store_nbr"]),
+    _fn("benchmark_store_vs_peers", "So cửa hàng với trung bình cửa hàng cùng loại: doanh thu, biên gộp, ticket.",
+        {"store_nbr": _STORE, "months": _MONTHS}, ["store_nbr"]),
+    _fn("analyze_reorder_profitability", "Cơ hội lợi nhuận nếu đặt thêm hàng đủ nhu cầu, xếp hạng mặt hàng.",
+        {"store_nbr": _STORE, "top_n": _TOPN}, ["store_nbr"]),
+    _fn("analyze_inventory_health", "Giá trị tồn, DOH, vòng quay, overstock > 30 ngày.",
+        {"store_nbr": _STORE, "months": _MONTHS}, ["store_nbr"]),
+    _fn("find_dead_stock", "Hàng chết: còn tồn nhưng không bán (chưa từng bán ở đây / 45 ngày toàn chuỗi ≈ 0).",
+        {"store_nbr": _STORE, "top_n": _TOPN}, ["store_nbr"]),
+    _fn("get_abc_analysis", "Phân loại ABC theo cửa hàng: A ≤ 80%, B ≤ 95% giá trị cộng dồn.",
+        {"store_nbr": _STORE, "top_n": _TOPN}, ["store_nbr"]),
+    _fn("analyze_weekly_pattern", "Doanh thu theo ngày trong tuần + lift cuối tuần vs ngày thường.",
+        {"store_nbr": _STORE, "weeks": ("integer", "Cửa sổ tuần (mặc định 12).")}, ["store_nbr"]),
+    _fn("compare_family_mix", "Cơ cấu ngành của cửa hàng vs chuỗi: thiếu/dư ngành nào.",
+        {"store_nbr": _STORE}, ["store_nbr"]),
 ]

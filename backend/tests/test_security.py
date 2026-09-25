@@ -31,17 +31,17 @@ class TestRowLevelIsolation:
     """
     Kiểm thử cách ly dữ liệu theo phạm vi cửa hàng.
     
-    Phân quyền:
+    Phân quyền (mỗi managerN quản đúng cửa hàng N):
     - admin: cửa hàng 1-54
-    - manager1: cửa hàng 1-10
-    - manager2: cửa hàng 11-20
+    - manager1: cửa hàng 1
+    - manager2: cửa hàng 2
     """
     
-    # --- Manager1: được phép truy cập store 1-10 ---
+    # --- Manager1: được phép truy cập store 1 ---
     
-    @pytest.mark.parametrize("store_id", [1, 5, 10])
+    @pytest.mark.parametrize("store_id", [1])
     def test_manager1_allowed_stores(self, manager1_headers, store_id):
-        """TEST-SEC-001..003: manager1 truy cập store {1,5,10} → 200."""
+        """TEST-SEC-001: manager1 truy cập store {1} → 200."""
         response = httpx.get(
             f"{BASE_URL}{API_PREFIX}/kpi",
             params={"store_nbr": store_id},
@@ -68,11 +68,11 @@ class TestRowLevelIsolation:
             f"Nhận: {response.status_code}"
         )
     
-    # --- Manager2: được phép store 11-20, cấm store 1-10 ---
+    # --- Manager2: được phép store 2, cấm các cửa hàng khác ---
     
-    @pytest.mark.parametrize("store_id", [11, 15, 20])
+    @pytest.mark.parametrize("store_id", [2])
     def test_manager2_allowed_stores(self, manager2_headers, store_id):
-        """TEST-SEC-020..022: manager2 truy cập store {11,15,20} → 200."""
+        """TEST-SEC-020: manager2 truy cập store {2} → 200."""
         response = httpx.get(
             f"{BASE_URL}{API_PREFIX}/kpi",
             params={"store_nbr": store_id},
@@ -350,7 +350,7 @@ class TestLLMAgentSecurity:
         """
         TEST-SEC-100: manager1 hỏi LLM về store 15 → phải từ chối.
         
-        manager1 chỉ có quyền store 1-10. LLM phải:
+        manager1 chỉ có quyền store 1. LLM phải:
         1. Không trả về dữ liệu store 15, HOẶC
         2. Thông báo không có quyền.
         """

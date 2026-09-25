@@ -70,13 +70,13 @@ def admin_token() -> str:
 
 @pytest.fixture(scope="session")
 def manager1_token() -> str:
-    """JWT token cho manager1 (cửa hàng 1-10)."""
+    """JWT token cho manager1 (cửa hàng 1)."""
     return login_and_get_token(MANAGER1_CREDENTIALS)
 
 
 @pytest.fixture(scope="session")
 def manager2_token() -> str:
-    """JWT token cho manager2 (cửa hàng 11-20)."""
+    """JWT token cho manager2 (cửa hàng 2)."""
     return login_and_get_token(MANAGER2_CREDENTIALS)
 
 

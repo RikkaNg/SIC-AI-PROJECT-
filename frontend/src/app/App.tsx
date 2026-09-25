@@ -8,12 +8,12 @@ import {
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import {
-  TrendingUp, Bot, BarChart2, Package, Warehouse,
+  TrendingUp, Bot, BarChart2, Package,
   Send, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search,
   Bell, Menu, LogOut,
   MapPin, RefreshCw,
-  ArrowUpRight, ArrowDownRight, Building2, PackagePlus,
-  Zap, FlaskConical,
+  ArrowUpRight, ArrowDownRight, PackagePlus,
+  Zap, FlaskConical, CalendarDays,
 } from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────── */
@@ -123,16 +123,16 @@ function restoreAuth(): AuthInfo | null {
 /* ── ABC badge (phân loại SKU theo tỷ trọng doanh số cộng dồn) ── */
 function abcBadgeClass(c?: string | null): string {
   switch (c) {
-    case "A": return "bg-blue-500/15 text-blue-600 border-blue-500/25";
-    case "B": return "bg-amber-500/15 text-amber-600 border-amber-500/25";
-    case "C": return "bg-slate-100 text-slate-400 border-slate-200";
+    case "A": return "bg-[#1E5A46]/10 text-[#1E5A46] border-[#1E5A46]/25";
+    case "B": return "bg-[#E8A33D]/15 text-[#B87A1E] border-[#E8A33D]/25";
+    case "C": return "bg-[#EDEAE0] text-[#8A968C] border-[#E7E3D8]";
     default: return "";
   }
 }
 
 /* ── Static Config ────────────────────────────────────────────── */
-// Palette theo frontend2 (light theme — xanh dương chủ đạo)
-const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#a855f7", "#ef4444", "#64748b"];
+// Bảng màu biểu đồ "Fresh Ledger": evergreen, leaf, citrus, plum, tomato, muted
+const CHART_COLORS = ["#1E5A46", "#3E8E5A", "#E8A33D", "#7C5CBF", "#D94436", "#5C6B62"];
 
 const quickQuestions = [
   "Top 3 sản phẩm bán chạy nhất là gì?",
@@ -174,19 +174,17 @@ function econOf(fam: string): [number, number, number] {
   const key = (fam || "").toUpperCase().trim();
   return FAMILY_ECONOMICS[key] ?? DEFAULT_ECON;
 }
-/* Tỷ giá quy đổi HIỂN THỊ: dữ liệu gốc trong DB tính bằng USD,
-   giao diện hiển thị VND. Đổi tỷ giá chỉ cần sửa con số này. */
-const USD_TO_VND = 25500;
+/* Đơn vị hiển thị tiền: USD — dữ liệu trong DB đã tính theo giá tham chiếu USD
+   từng nhóm hàng (family_prices / FAMILY_ECONOMICS). Muốn hiển thị VND,
+   nhân hệ số quy đổi trong hai hàm fmtMoney / fmtMoneyCompact bên dưới. */
 function fmtMoney(n: number): string {
-  const vnd = Math.round(n * USD_TO_VND);
-  return vnd.toLocaleString("vi-VN") + " ₫";
+  return "$" + Math.round(n).toLocaleString("vi-VN");
 }
 function fmtMoneyCompact(v: number): string {
-  const x = v * USD_TO_VND;
-  if (Math.abs(x) >= 1e12) return `${(x / 1e12).toLocaleString("vi-VN", { maximumFractionDigits: 2 })} nghìn tỷ ₫`;
-  if (Math.abs(x) >= 1e9) return `${(x / 1e9).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} tỷ ₫`;
-  if (Math.abs(x) >= 1e6) return `${Math.round(x / 1e6).toLocaleString("vi-VN")} tr ₫`;
-  return `${Math.round(x).toLocaleString("vi-VN")} ₫`;
+  if (Math.abs(v) >= 1e9) return `${(v / 1e9).toLocaleString("vi-VN", { maximumFractionDigits: 2 })} tỷ $`;
+  if (Math.abs(v) >= 1e6) return `${(v / 1e6).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} tr $`;
+  if (Math.abs(v) >= 1e3) return `${Math.round(v / 1e3).toLocaleString("vi-VN")} K $`;
+  return `${Math.round(v).toLocaleString("vi-VN")} $`;
 }
 
 /* Cache module-level: tránh tải lại CSV / gọi lại API mỗi lần chuyển tab */
@@ -194,25 +192,36 @@ let csvHistCache: RawSaleData[] | null = null;
 type BizPoint = { date: string; revenue: number; returns: number; gross_profit: number; cogs?: number; invoices?: number };
 const bizCacheByBranch: Record<string, BizPoint[]> = {};
 
-/* ── Small components (kiểu frontend2) ───────────────────────── */
-function StatCard({
-  label, value, sub, trend, color = "blue",
-}: { label: string; value: string; sub: string; trend: "up" | "down"; color?: string }) {
-  const gradients: Record<string, string> = {
-    blue: "from-blue-500/10 to-transparent border-blue-500/20",
-    green: "from-emerald-500/10 to-transparent border-emerald-500/20",
-    amber: "from-amber-500/10 to-transparent border-amber-500/20",
-    purple: "from-purple-500/10 to-transparent border-purple-500/20",
-  };
+/* ── Small components (Fresh Ledger) ─────────────────────────── */
+/* Chấm độ tươi — ngôn ngữ trạng thái chung: Leaf khỏe · Citrus theo dõi · Tomato rủi ro */
+function FreshDot({ tone }: { tone: "good" | "watch" | "risk" }) {
+  const c = { good: "bg-[#3E8E5A]", watch: "bg-[#E8A33D]", risk: "bg-[#D94436]" }[tone];
+  return <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c}`} aria-hidden="true" />;
+}
+
+/* Khối KPI "sổ cái" — signature của Fresh Ledger:
+   nhãn 11px · số Space Grotesk tabular · gạch đôi mảnh như dòng sổ cái · ghi chú dưới dòng kẻ */
+function LedgerStat({ label, value, sub, trend, tone, delay = 0 }: {
+  label: string; value: string; sub: string; trend: "up" | "down";
+  tone?: "good" | "watch" | "risk"; delay?: number;
+}) {
   return (
-    <div className={`bg-gradient-to-br ${gradients[color]} border rounded-xl p-5 bg-white`}>
-      <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-2">{label}</p>
-      <p className="text-2xl font-semibold text-slate-900 tabular-nums leading-none mb-2">{value}</p>
-      <div className="flex items-center gap-1">
-        {trend === "up"
-          ? <ArrowUpRight size={13} className="text-emerald-500 flex-shrink-0" />
-          : <ArrowDownRight size={13} className="text-red-500 flex-shrink-0" />}
-        <span className={`text-xs font-mono ${trend === "up" ? "text-emerald-500" : "text-red-500"}`}>{sub}</span>
+    <div
+      className="bg-white border border-[#E7E3D8] rounded-[14px] p-5 fade-up"
+      style={delay ? { animationDelay: `${delay}ms` } : undefined}
+    >
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-semibold text-[#5C6B62] uppercase tracking-[0.06em]">{label}</p>
+        {tone && <FreshDot tone={tone} />}
+      </div>
+      <p className="text-[30px] font-semibold text-[#14231D] tabular-nums leading-none font-display">{value}</p>
+      <div className="mt-3 pt-2.5 border-t-[3px] border-double border-t-[#14231D]/45">
+        <div className={`flex items-center gap-1 text-[12.5px] font-medium ${trend === "up" ? "text-[#3E8E5A]" : "text-[#D94436]"}`}>
+          {trend === "up"
+            ? <ArrowUpRight size={13} className="flex-shrink-0" />
+            : <ArrowDownRight size={13} className="flex-shrink-0" />}
+          <span>{sub}</span>
+        </div>
       </div>
     </div>
   );
@@ -224,8 +233,8 @@ function SectionHeader({
   return (
     <div className="flex items-start justify-between mb-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900 tracking-tight">{title}</h1>
-        {sub && <p className="text-xs font-mono text-slate-500 mt-0.5">{sub}</p>}
+        <h1 className="text-lg font-semibold text-[#14231D] tracking-tight font-display">{title}</h1>
+        {sub && <p className="text-[12.5px] text-[#5C6B62] mt-1">{sub}</p>}
       </div>
       {action}
     </div>
@@ -235,10 +244,10 @@ function SectionHeader({
 function ChartTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-2xl">
-      <p className="text-[10px] font-mono text-slate-500 mb-1.5">{label}</p>
+    <div className="bg-white border border-[#E7E3D8] rounded-lg px-3 py-2 shadow-2xl">
+      <p className="text-[10px] text-[#5C6B62] mb-1.5">{label}</p>
       {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color }} className="text-xs font-mono">
+        <p key={i} style={{ color: p.color }} className="text-xs">
           {p.name}: <span className="font-medium">{typeof p.value === "number" ? p.value.toLocaleString("vi-VN") : p.value}</span>
         </p>
       ))}
@@ -246,14 +255,14 @@ function ChartTip({ active, payload, label }: any) {
   );
 }
 
-/* Tooltip cho các biểu đồ tiền tệ (dữ liệu gốc USD, hiển thị VND) */
+/* Tooltip cho các biểu đồ tiền tệ (USD theo giá tham chiếu) */
 function BizTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-2xl">
-      <p className="text-[10px] font-mono text-slate-500 mb-1.5">{label}</p>
+    <div className="bg-white border border-[#E7E3D8] rounded-lg px-3 py-2 shadow-2xl">
+      <p className="text-[10px] text-[#5C6B62] mb-1.5">{label}</p>
       {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color }} className="text-xs font-mono">
+        <p key={i} style={{ color: p.color }} className="text-xs">
           {p.name}: <span className="font-medium">{fmtMoney(Number(p.value))}</span>
         </p>
       ))}
@@ -262,9 +271,8 @@ function BizTip({ active, payload, label }: any) {
 }
 
 /* ── Section: Đăng nhập ───────────────────────────────────────── */
-function LoginView({ apiBase, setApiBase, onLoggedIn }: {
+function LoginView({ apiBase, onLoggedIn }: {
   apiBase: string;
-  setApiBase: (v: string) => void;
   onLoggedIn: (a: AuthInfo) => void;
 }) {
   const [username, setUsername] = useState("");
@@ -293,64 +301,56 @@ function LoginView({ apiBase, setApiBase, onLoggedIn }: {
         isAdmin: data.role === "admin",
       });
     } catch (e: any) {
-      setErr(e?.message || "Không thể đăng nhập. Kiểm tra backend đã chạy chưa.");
+      setErr(e?.message || "Không thể đăng nhập. Vui lòng thử lại sau.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-slate-50" style={{ fontFamily: "'Be Vietnam Pro', system-ui, sans-serif" }}>
-      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-7 shadow-sm">
+    <div className="flex h-screen items-center justify-center bg-[#F6F4EE]">
+      <div className="w-full max-w-sm bg-white border border-[#E7E3D8] rounded-2xl p-7 shadow-sm fade-up">
         <div className="flex items-center gap-2.5 mb-6">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Warehouse size={17} className="text-white" />
+          <div className="w-9 h-9 bg-[#1E5A46] rounded-lg flex items-center justify-center">
+            <span className="font-display font-bold text-white text-[16px]">B</span>
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-900 leading-none">BizAI</p>
-            <p className="text-[10px] font-mono text-slate-500 mt-0.5">Retail Intelligence</p>
+            <p className="text-base font-semibold text-[#14231D] leading-none font-display">BizAI</p>
+            <p className="text-[11px] text-[#5C6B62] mt-0.5">Dự báo & phân tích bán lẻ</p>
           </div>
         </div>
 
-        <label className="block text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1">Tên đăng nhập</label>
+        <label className="block text-[10px] text-[#5C6B62] uppercase tracking-wider mb-1">Tên đăng nhập</label>
         <input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
           autoFocus
-          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 mb-3 focus:outline-none focus:border-blue-500/50"
+          className="w-full bg-white border border-[#E7E3D8] rounded-lg px-3 py-2 text-xs text-[#14231D] mb-3 focus:outline-none focus:border-[#1E5A46]/50"
           placeholder="vd: manager1"
         />
 
-        <label className="block text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1">Mật khẩu</label>
+        <label className="block text-[10px] text-[#5C6B62] uppercase tracking-wider mb-1">Mật khẩu</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500/50"
+          className="w-full bg-white border border-[#E7E3D8] rounded-lg px-3 py-2 text-xs text-[#14231D] focus:outline-none focus:border-[#1E5A46]/50"
           placeholder="••••••••"
         />
 
         {err && (
-          <div className="mt-3 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2 text-[11px] text-red-600">{err}</div>
+          <div className="mt-3 bg-[#D94436]/10 border border-[#D94436]/25 rounded-lg px-3 py-2 text-[11px] text-[#B93727]">{err}</div>
         )}
 
         <button
           onClick={submit}
           disabled={busy || !username.trim() || !password}
-          className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium py-2.5 rounded-lg transition-colors"
+          className="w-full mt-4 bg-[#1E5A46] hover:bg-[#174A39] disabled:opacity-40 text-white text-xs font-medium py-2.5 rounded-lg transition-colors"
         >
           {busy ? "Đang đăng nhập..." : "Đăng nhập"}
         </button>
-
-        <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mt-5 mb-1">Backend API</label>
-        <input
-          value={apiBase}
-          onChange={(e) => setApiBase(e.target.value)}
-          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-mono text-slate-600 focus:outline-none focus:border-blue-500/40"
-          placeholder="http://localhost:8000"
-        />
       </div>
     </div>
   );
@@ -367,6 +367,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
   const [loading, setLoading] = useState(true);
   const [apiOk, setApiOk] = useState(false);
   const [apiErr, setApiErr] = useState("");
+  const [retryTick, setRetryTick] = useState(0); // bấm "Thử lại" để tải lại dự báo
 
   // Bộ lọc ngành hàng + mốc thời gian
   const [family, setFamily] = useState("all");
@@ -484,7 +485,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
         setApiOk(true);
       } catch (e: any) {
         if (!cancelled) {
-          setApiErr(e?.message || "Không kết nối được backend.");
+          setApiErr(e?.message || "Không tải được dữ liệu. Vui lòng thử lại sau.");
           setApiOk(false);
         }
       } finally {
@@ -495,17 +496,17 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
     return () => {
       cancelled = true;
     };
-  }, [branchId, apiBase, auth, isRealStore, onAuthError, family, fromDate, toDate]);
+  }, [branchId, apiBase, auth, isRealStore, onAuthError, family, fromDate, toDate, retryTick]);
 
   const chartData = liveChart ?? [];
 
   if (!isRealStore || loading) {
     return (
       <div className="space-y-5">
-        <SectionHeader title="Dự báo doanh số" sub="Phân tích & dự báo doanh thu theo thời gian thực" />
-        <div className="flex items-center justify-center h-64 text-slate-500 text-sm gap-2 bg-white border border-slate-200 rounded-xl">
+        <SectionHeader title="Dự báo doanh số" sub="Tổng quan 16 ngày tới" />
+        <div className="flex items-center justify-center h-64 text-[#5C6B62] text-sm gap-2 bg-white border border-[#E7E3D8] rounded-[14px]">
           <RefreshCw size={15} className="animate-spin" />
-          Đang tải dữ liệu từ backend...
+          Đang tải...
         </div>
       </div>
     );
@@ -514,9 +515,15 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
   if (!apiOk) {
     return (
       <div className="space-y-5">
-        <SectionHeader title="Dự báo doanh số" sub="Phân tích & dự báo doanh thu theo thời gian thực" />
-        <div className="bg-red-500/10 border border-red-500/25 rounded-lg px-4 py-3 text-sm text-red-600">
-          {apiErr || `Không kết nối được backend (${apiBase}). Kiểm tra lại backend đã chạy chưa.`}
+        <SectionHeader title="Dự báo doanh số" sub="Tổng quan 16 ngày tới" />
+        <div className="bg-[#D94436]/10 border border-[#D94436]/25 rounded-lg px-4 py-3 text-sm text-[#B93727] flex items-center justify-between gap-3">
+          <span>{apiErr || "Không tải được dữ liệu dự báo."}</span>
+          <button
+            onClick={() => { setLoading(true); setRetryTick((t) => t + 1); }}
+            className="flex-shrink-0 text-xs font-medium text-[#1E5A46] bg-white border border-[#1E5A46]/25 hover:bg-[#EAF3EE] rounded-lg px-3 py-1.5 transition-colors"
+          >
+            Thử lại
+          </button>
         </div>
       </div>
     );
@@ -529,17 +536,17 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
 
   return (
     <div className="space-y-5">
-      <SectionHeader title="Dự báo doanh số" sub="Phân tích & dự báo doanh thu theo thời gian thực — Nguồn: model LightGBM thật" />
+      <SectionHeader title="Dự báo doanh số" sub="Tổng quan 16 ngày tới" />
 
       {/* Bộ lọc ngành hàng + mốc thời gian */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-        <label className="flex items-center gap-2 text-xs text-slate-500">
-          <Package size={12} className="text-slate-400 shrink-0" />
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <label className="flex items-center gap-2 text-xs text-[#5C6B62]">
+          <Package size={12} className="text-[#8A968C] shrink-0" />
           Ngành hàng
           <select
             value={family}
             onChange={(e) => setFamily(e.target.value)}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-blue-500/40 max-w-[220px]"
+            className="bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 max-w-[220px]"
           >
             <option value="all">Tất cả ngành hàng</option>
             {families.map((f) => (<option key={f} value={f}>{f}</option>))}
@@ -550,7 +557,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
             <button
               key={String(mode)}
               onClick={() => setRangeMode(mode as typeof rangeMode)}
-              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${rangeMode === mode ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
+              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${rangeMode === mode ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "bg-white border-[#E7E3D8] text-[#5C6B62] hover:text-[#14231D]"}`}
             >
               {label}
             </button>
@@ -558,24 +565,24 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
         </div>
         {rangeMode === "custom" && (
           <>
-            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            <label className="flex items-center gap-1.5 text-xs text-[#5C6B62]">
               Từ ngày
               <input type="date" value={fromDate} min={meta?.from || undefined} max={meta?.to || undefined}
                 onChange={(e) => setFromDate(e.target.value)} disabled={!meta}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+                className="bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 disabled:opacity-40" />
             </label>
-            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            <label className="flex items-center gap-1.5 text-xs text-[#5C6B62]">
               Đến ngày
               <input type="date" value={toDate} min={meta?.from || undefined} max={meta?.to || undefined}
                 onChange={(e) => setToDate(e.target.value)} disabled={!meta}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+                className="bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 disabled:opacity-40" />
             </label>
             {(fromDate || toDate) && (
               <button
                 onClick={() => { setFromDate(""); setToDate(""); }}
-                className="text-xs text-slate-400 hover:text-blue-600 underline underline-offset-2 transition-colors"
+                className="text-xs text-[#8A968C] hover:text-[#1E5A46] underline underline-offset-2 transition-colors"
               >
-                Xóa khoảng
+                Xoá khoảng
               </button>
             )}
           </>
@@ -585,79 +592,79 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {liveKpi && (
           <>
-            <StatCard label={`Tổng dự báo (${rangeLabel})`} value={liveKpi.total}
-              sub={`Ngành hàng: ${familyLabel}`} trend="up" color="blue" />
-            <StatCard label="Trung bình mỗi ngày" value={liveKpi.avgPerDay}
-              sub={`Theo bộ lọc hiện tại · ${liveKpi.days ?? "..."} ngày`} trend="up" color="green" />
+            <LedgerStat label={`Tổng dự báo (${rangeLabel})`} value={liveKpi.total}
+              sub={`Ngành hàng: ${familyLabel}`} trend="up" />
+            <LedgerStat label="Trung bình mỗi ngày" value={liveKpi.avgPerDay}
+              sub={`Theo bộ lọc hiện tại · ${liveKpi.days ?? "..."} ngày`} trend="up" delay={60} />
           </>
         )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
+        <div className="xl:col-span-2 bg-white border border-[#E7E3D8] rounded-[14px] p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-sm font-semibold text-slate-900">Dự báo doanh số theo ngày</p>
-              <p className="text-[10px] font-mono text-slate-500 mt-0.5">{familyLabel} · {rangeLabel}</p>
+              <p className="text-sm font-semibold text-[#14231D]">Dự báo doanh số theo ngày</p>
+              <p className="text-[10px] text-[#5C6B62] mt-0.5">{familyLabel} · {rangeLabel}</p>
             </div>
-            <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
-              <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-purple-500 rounded inline-block" />Dự báo</span>
+            <div className="flex items-center gap-4 text-[10px] text-[#5C6B62]">
+              <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-[#1E5A46] rounded inline-block" />Dự báo</span>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="gForecast" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#a855f7" stopOpacity={0.18} />
-                  <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#1E5A46" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="#1E5A46" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
-                tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}M`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E7E3D8" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false}
+                tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toLocaleString("vi-VN")}K` : `${v}`} />
               <Tooltip content={<ChartTip />} />
               <Area type="monotone" dataKey="dubao" name="Dự báo" stroke="none" fill="url(#gForecast)" />
-              <Line type="monotone" dataKey="dubao" name="Dự báo" stroke="#a855f7" strokeWidth={2}
-                dot={{ fill: "#a855f7", r: 3, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="dubao" name="Dự báo" stroke="#1E5A46" strokeWidth={2}
+                dot={{ fill: "#1E5A46", r: 3, strokeWidth: 0 }} activeDot={{ r: 4 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-5">
           <div className="flex items-baseline justify-between mb-4">
-            <p className="text-sm font-semibold text-slate-900">Top sản phẩm bán chạy</p>
-            <p className="text-[9px] font-mono text-slate-400 uppercase">Doanh số 2016</p>
+            <p className="text-sm font-semibold text-[#14231D]">Top sản phẩm bán chạy</p>
+            <p className="text-[9px] text-[#8A968C] uppercase">Doanh số 2016</p>
           </div>
           <div className="space-y-3">
             {topErr ? (
-              <p className="text-[11px] text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-2.5 py-2">{topErr}</p>
+              <p className="text-[11px] text-[#D94436] bg-[#D94436]/10 border border-[#D94436]/20 rounded-lg px-2.5 py-2">{topErr}</p>
             ) : topProducts.length === 0 ? (
-              <p className="text-slate-500 text-xs flex items-center gap-1.5"><RefreshCw size={11} className="animate-spin" /> Đang tải dữ liệu...</p>
+              <p className="text-[#5C6B62] text-xs flex items-center gap-1.5"><RefreshCw size={11} className="animate-spin" /> Đang tải...</p>
             ) : (
               topProducts.map((p, i) => (
                 <div key={p.item_nbr}>
                   <div className="flex items-center justify-between mb-1 gap-2">
-                    <span className="text-slate-700 text-xs truncate flex items-center gap-1.5 min-w-0">
-                      <span className={`font-mono text-[9px] w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${i === 0 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{p.rank}</span>
-                      <span className="font-medium truncate" title={p.name ?? undefined}>{p.name ?? `#${p.item_nbr}`}</span>
-                      <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">#{p.item_nbr}</span>
-                      <span className="text-[10px] font-mono text-slate-400 truncate">{p.family}</span>
+                    <span className="text-[#2A3B32] text-xs truncate flex items-center gap-1.5 min-w-0">
+                      <span className={`text-[9px] w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${i === 0 ? "bg-[#1E5A46] text-white" : "bg-[#EDEAE0] text-[#5C6B62]"}`}>{p.rank}</span>
+                      <span className="font-medium truncate" title={p.name ?? undefined}>{p.name ?? `Mã ${p.item_nbr}`}</span>
                       {p.abc_class && (
-                        <span className={`text-[9px] font-mono px-1 rounded border flex-shrink-0 ${abcBadgeClass(p.abc_class)}`} title={`Lớp ${p.abc_class} theo tỷ trọng doanh số cộng dồn`}>
+                        <span className={`text-[9px] px-1 rounded border flex-shrink-0 ${abcBadgeClass(p.abc_class)}`} title={`Lớp ${p.abc_class} theo tỷ trọng doanh số cộng dồn`}>
                           {p.abc_class}
                         </span>
                       )}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">{p.share_pct}%</span>
+                    <span className="text-[10px] text-[#8A968C] flex-shrink-0">{p.share_pct}%</span>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5">
+                  <div className="w-full bg-[#EDEAE0] rounded-full h-1.5">
                     <div
-                      className="h-1.5 rounded-full transition-all duration-700"
-                      style={{ width: `${(p.unit_sales / (topProducts[0]?.unit_sales || 1)) * 100}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
+                      className="h-1.5 rounded-full bg-[#1E5A46] transition-all duration-700"
+                      style={{ width: `${(p.unit_sales / (topProducts[0]?.unit_sales || 1)) * 100}%` }}
                     />
                   </div>
-                  <p className="text-[10px] font-mono text-slate-500 mt-0.5">{Math.round(p.unit_sales).toLocaleString("vi-VN")} đơn vị{p.perishable === 1 ? " · dễ hỏng" : ""}</p>
+                  <p className="text-[10px] text-[#5C6B62] mt-0.5 truncate">
+                    {p.family} · Mã {p.item_nbr} · {Math.round(p.unit_sales).toLocaleString("vi-VN")} đơn vị{p.perishable === 1 ? " · dễ hỏng" : ""}
+                  </p>
                 </div>
               ))
             )}
@@ -671,7 +678,7 @@ function SalesForecast({ branchId, apiBase, auth, onAuthError }: {
 /* ── Section: AI Chatbot (Gọi qua Backend Gateway -> Groq Qwen 3) ─────────── */
 function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: AuthInfo; onAuthError: () => void }) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", text: "Xin chào! Tôi là AI Assistant quản trị chuỗi cung ứng (Groq Qwen 3.6). Hãy hỏi về tồn kho, dự báo nhu cầu hoặc kế hoạch đặt hàng nhé!" }
+    { role: "assistant", text: "Xin chào! Tôi là trợ lý phân tích bán hàng. Hỏi tôi về tồn kho, dự báo nhu cầu hoặc kế hoạch nhập hàng nhé!" }
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -718,7 +725,7 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
       setMessages((m) => [...m, { role: "assistant", text: aiText }]);
     } catch (error: any) {
       console.error("Lỗi hệ thống:", error);
-      setMessages((m) => [...m, { role: "assistant", text: `Lỗi AI: ${error.message}` }]);
+      setMessages((m) => [...m, { role: "assistant", text: `Không nhận được câu trả lời — ${error.message}. Thử hỏi lại hoặc diễn đạt theo cách khác nhé.` }]);
     } finally {
       setThinking(false);
     }
@@ -726,33 +733,29 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
 
   return (
     <div className="flex flex-col xl:flex-row gap-4 h-[calc(100vh-10rem)] min-h-[480px]">
-      <div className="flex-1 min-w-0 flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-200 flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
-            <Bot size={14} className="text-blue-600" />
+      <div className="flex-1 min-w-0 flex flex-col bg-white border border-[#E7E3D8] rounded-[14px] overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-[#E7E3D8] flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-[#EAF3EE] flex items-center justify-center">
+            <Bot size={14} className="text-[#1E5A46]" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-900">AI Business Assistant</p>
-            <p className="text-[10px] font-mono text-slate-500">Powered by Groq Qwen 3.6</p>
-          </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-            <span className="text-[10px] font-mono text-emerald-500">Online</span>
+            <p className="text-sm font-semibold text-[#14231D]">Trợ lý dữ liệu bán hàng</p>
+            <p className="text-[10px] text-[#5C6B62]">Hỏi đáp bằng tiếng Việt theo phạm vi cửa hàng của bạn</p>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
           {messages.map((m, i) => (
             <div key={i} className={`flex gap-2.5 ${m.role === "user" ? "flex-row-reverse" : ""}`}>
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${m.role === "assistant" ? "bg-blue-50" : "bg-slate-100"}`}>
-                {m.role === "assistant" ? <Bot size={13} className="text-blue-600" /> : <span className="text-[10px] text-slate-500 font-mono font-bold">N</span>}
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${m.role === "assistant" ? "bg-[#EAF3EE]" : "bg-[#EDEAE0]"}`}>
+                {m.role === "assistant" ? <Bot size={13} className="text-[#1E5A46]" /> : <span className="text-[10px] text-[#5C6B62] font-bold">N</span>}
               </div>
               <div className={`flex flex-col gap-1 max-w-[80%] ${m.role === "user" ? "items-end" : "items-start"}`}>
-                <div className={`rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${m.role === "assistant" ? "bg-slate-100 text-slate-900 rounded-tl-sm" : "bg-blue-600 text-white rounded-tr-sm"}`}>
+                <div className={`rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${m.role === "assistant" ? "bg-[#EDEAE0] text-[#14231D] rounded-tl-sm" : "bg-[#1E5A46] text-white rounded-tr-sm"}`}>
                   {m.text.split("\n").map((line, j) => (
                     <p key={j} className={line === "" ? "h-2" : ""}>
                       {line.startsWith("**") && line.endsWith("**")
-                        ? <strong className={m.role === "assistant" ? "text-blue-600" : "text-white"}>{line.slice(2, -2)}</strong>
+                        ? <strong className={m.role === "assistant" ? "text-[#1E5A46]" : "text-white"}>{line.slice(2, -2)}</strong>
                         : line}
                     </p>
                   ))}
@@ -762,14 +765,14 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
           ))}
           {thinking && (
             <div className="flex gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center">
-                <Bot size={13} className="text-blue-600" />
+              <div className="w-7 h-7 rounded-full bg-[#EAF3EE] flex items-center justify-center">
+                <Bot size={13} className="text-[#1E5A46]" />
               </div>
-              <div className="bg-slate-100 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
+              <div className="bg-[#EDEAE0] rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
                 {[0, 1, 2].map((i) => (
                   <span
                     key={i}
-                    className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+                    className="w-1.5 h-1.5 bg-[#B5BEB4] rounded-full animate-bounce"
                     style={{ animationDelay: `${i * 0.15}s` }}
                   />
                 ))}
@@ -779,19 +782,19 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-slate-200 p-3">
+        <div className="border-t border-[#E7E3D8] p-3">
           <div className="flex gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send(input)}
               placeholder="Hỏi AI về dữ liệu cửa hàng..."
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500/40 transition-colors"
+              className="flex-1 bg-[#F6F4EE] border border-[#E7E3D8] rounded-[14px] px-4 py-2.5 text-xs text-[#14231D] placeholder:text-[#8A968C] focus:outline-none focus:border-[#1E5A46]/40 transition-colors"
             />
             <button
               onClick={() => send(input)}
               disabled={!input.trim() || thinking}
-              className="bg-blue-600 text-white px-3.5 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="bg-[#1E5A46] text-white px-3.5 rounded-[14px] hover:bg-[#174A39] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               <Send size={14} />
             </button>
@@ -800,14 +803,14 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
       </div>
 
       <div className="xl:w-52 shrink-0 flex flex-col gap-3 overflow-y-auto scrollbar-hide">
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <p className="text-xs font-semibold text-slate-900 mb-3">Câu hỏi nhanh</p>
+        <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-4">
+          <p className="text-xs font-semibold text-[#14231D] mb-3">Câu hỏi nhanh</p>
           <div className="space-y-1.5">
             {quickQuestions.map((q) => (
               <button
                 key={q}
                 onClick={() => send(q)}
-                className="w-full text-left text-[11px] text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg px-3 py-2 transition-all leading-snug"
+                className="w-full text-left text-[11px] text-[#4A5A50] hover:text-[#1E5A46] bg-[#F6F4EE] hover:bg-[#EAF3EE] border border-transparent hover:border-[#BFD8C9] rounded-lg px-3 py-2 transition-all leading-snug"
               >
                 {q}
               </button>
@@ -815,16 +818,14 @@ function AIChatbot({ apiBase, auth, onAuthError }: { apiBase: string; auth: Auth
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <p className="text-xs font-semibold text-slate-900 mb-3">Trạng thái</p>
-          <div className="space-y-2.5">
-            {[{ label: "Model", val: "Groq Qwen 3.6" }, { label: "Gateway", val: apiBase.replace(/^https?:\/\//, "") }].map((s) => (
-              <div key={s.label} className="flex items-center justify-between gap-2">
-                <span className="text-slate-500 text-xs">{s.label}</span>
-                <span className="text-slate-900 font-mono text-[10px] font-medium truncate">{s.val}</span>
-              </div>
-            ))}
-          </div>
+        <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-4">
+          <p className="text-xs font-semibold text-[#14231D] mb-3">AI có thể giúp gì</p>
+          <ul className="space-y-2 text-[11px] text-[#4A5A50] leading-snug">
+            <li className="flex gap-1.5"><FreshDot tone="good" /> Kiểm tra tồn kho và đặt hàng bổ sung</li>
+            <li className="flex gap-1.5"><FreshDot tone="good" /> Đọc dự báo nhu cầu theo ngành hàng</li>
+            <li className="flex gap-1.5"><FreshDot tone="good" /> Chạy thử kịch bản tăng giảm nhu cầu</li>
+            <li className="flex gap-1.5"><FreshDot tone="good" /> Tìm sản phẩm bán chạy, hàng sắp hết</li>
+          </ul>
         </div>
       </div>
     </div>
@@ -854,14 +855,14 @@ function formatDateVN(s: string): string {
 
 function InsightCard({ tone, children }: { tone: "good" | "warn" | "bad" | "info"; children: ReactNode }) {
   const tones: Record<string, string> = {
-    good: "bg-emerald-500/5 border-emerald-500/15",
-    warn: "bg-amber-500/5 border-amber-500/15",
-    bad: "bg-red-500/5 border-red-500/15",
-    info: "bg-blue-500/5 border-blue-500/15",
+    good: "bg-[#3E8E5A]/5 border-[#3E8E5A]/15",
+    warn: "bg-[#E8A33D]/5 border-[#E8A33D]/15",
+    bad: "bg-[#D94436]/5 border-[#D94436]/15",
+    info: "bg-[#1E5A46]/5 border-[#1E5A46]/15",
   };
-  const bars: Record<string, string> = { good: "bg-emerald-500", warn: "bg-amber-500", bad: "bg-red-500", info: "bg-blue-500" };
+  const bars: Record<string, string> = { good: "bg-[#3E8E5A]", warn: "bg-[#E8A33D]", bad: "bg-[#D94436]", info: "bg-[#1E5A46]" };
   return (
-    <div className={`flex gap-2.5 p-3 rounded-xl border text-xs leading-relaxed text-slate-700 ${tones[tone]}`}>
+    <div className={`flex gap-2.5 p-3 rounded-[14px] border text-xs leading-relaxed text-[#2A3B32] ${tones[tone]}`}>
       <div className={`w-1 flex-shrink-0 rounded-full mt-0.5 ${bars[tone]}`} style={{ minHeight: "1rem" }} />
       <div>{children}</div>
     </div>
@@ -879,6 +880,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   const [totalForecast, setTotalForecast] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [retryTick, setRetryTick] = useState(0); // bấm "Thử lại" để tải lại phân tích
 
   useEffect(() => {
     let cancelled = false;
@@ -903,14 +905,14 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
           return s + (trend.families || []).reduce((s2: number, f: string) => s2 + (Number(r[f]) || 0), 0);
         }, 0));
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || "Không kết nối được backend.");
+        if (!cancelled) setErr(e?.message || "Không tải được dữ liệu. Vui lòng thử lại sau.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [branchId, apiBase, auth, onAuthError, trendDays]);
+  }, [branchId, apiBase, auth, onAuthError, trendDays, retryTick]);
 
   // Ngày cuối cùng thực tế của cửa sổ đang chọn (backend có thể trả ít điểm hơn kỳ gốc)
   const winLastDate: string = trendRows.length ? String((trendRows[trendRows.length - 1] as any).date || "") : "";
@@ -934,7 +936,7 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     return () => { cancelled = true; };
   }, []);
 
-  // ── Chỉ số kinh doanh lịch sử từ backend (RLS theo cửa hàng; gốc USD, hiển thị VND) ──
+  // ── Chỉ số kinh doanh lịch sử từ backend (RLS theo cửa hàng; đơn vị USD) ──
   const [bizRows, setBizRows] = useState<BizPoint[]>([]);
   const [bizState, setBizState] = useState<"loading" | "ok" | "none">("loading");
   useEffect(() => {
@@ -1005,6 +1007,8 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
   // Kỳ ngắn (<=61 ngày) tự dùng thang NGÀY để không bị gộp thành cột tháng/quý gây hiểu nhầm
   const effGranularity: HistGranularity =
     specificDate || customSpanDays <= 61 ? "day" : granularity;
+  // Thang bucketing bị hệ thống tự chọn (ngày cụ thể / cửa sổ <= 61 ngày) -> khoá nút chọn thang
+  const granularityLocked = Boolean(specificDate) || customSpanDays <= 61;
 
   const dailyTotals = useMemo(() => {
     const m: Record<string, number> = {};
@@ -1195,9 +1199,9 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     return (
       <div className="space-y-5">
         <SectionHeader title="Phân tích sản phẩm" sub="Hiệu suất và xu hướng danh mục sản phẩm" />
-        <div className="flex items-center justify-center h-64 text-slate-500 text-sm gap-2 bg-white border border-slate-200 rounded-xl">
+        <div className="flex items-center justify-center h-64 text-[#5C6B62] text-sm gap-2 bg-white border border-[#E7E3D8] rounded-[14px]">
           <RefreshCw size={15} className="animate-spin" />
-          Đang tải dữ liệu từ backend...
+          Đang tải...
         </div>
       </div>
     );
@@ -1207,7 +1211,15 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
     return (
       <div className="space-y-5">
         <SectionHeader title="Phân tích sản phẩm" sub="Hiệu suất và xu hướng danh mục sản phẩm" />
-        <div className="bg-red-500/10 border border-red-500/25 rounded-lg px-4 py-3 text-sm text-red-600">{err}</div>
+        <div className="bg-[#D94436]/10 border border-[#D94436]/25 rounded-lg px-4 py-3 text-sm text-[#B93727] flex items-center justify-between gap-3">
+          <span>{err}</span>
+          <button
+            onClick={() => { setLoading(true); setRetryTick((t) => t + 1); }}
+            className="flex-shrink-0 text-xs font-medium text-[#1E5A46] bg-white border border-[#1E5A46]/25 hover:bg-[#EAF3EE] rounded-lg px-3 py-1.5 transition-colors"
+          >
+            Thử lại
+          </button>
+        </div>
       </div>
     );
   }
@@ -1217,110 +1229,104 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
 
   return (
     <div className="space-y-5">
-      <SectionHeader title="Phân tích sản phẩm" sub="Hiệu suất danh mục — Dự báo LightGBM (backend) + Doanh số thực tế 2016–2017 (dataset)" />
+      <SectionHeader title="Phân tích sản phẩm" sub="Hiệu suất danh mục theo kỳ đang chọn" />
 
-      {/* Bộ điều khiển thời gian — áp dụng cho toàn bộ các bảng/dữ liệu thực tế bên dưới */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex gap-1.5">
-          {([["day", "Ngày"], ["month", "Tháng"], ["quarter", "Quý"]] as [HistGranularity, string][]).map(([k, l]) => (
-            <button
-              key={k}
-              onClick={() => setGranularity(k)}
-              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${granularity === k ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center gap-1.5 text-xs text-slate-500">
+      {/* Bộ lọc thời gian — khoảng ngày áp dụng cho KPI/biểu đồ bên dưới;
+          nút thang Ngày/Tháng/Quý nằm ở card "Chỉ số kinh doanh theo thời gian" */}
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <label className="flex items-center gap-1.5 text-xs text-[#5C6B62]">
           Từ ngày
           <input type="date" value={fromDate} min={bounds.min || undefined} max={bounds.max || undefined}
             onChange={(e) => setFromDate(e.target.value)}
             disabled={!bounds.min}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+            className="bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 disabled:opacity-40" />
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-500">
+        <label className="flex items-center gap-1.5 text-xs text-[#5C6B62]">
           Đến ngày
           <input type="date" value={toDate} min={bounds.min || undefined} max={bounds.max || undefined}
             onChange={(e) => setToDate(e.target.value)}
             disabled={!bounds.min}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+            className="bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 disabled:opacity-40" />
         </label>
         {(fromDate || toDate) && (
           <button
             onClick={() => { setFromDate(""); setToDate(""); }}
-            className="text-xs text-slate-400 hover:text-blue-600 underline underline-offset-2 transition-colors"
+            className="text-xs text-[#8A968C] hover:text-[#1E5A46] underline underline-offset-2 transition-colors"
           >
-            Cả kỳ
+            Toàn kỳ
           </button>
         )}
-        <div className="h-5 w-px bg-slate-200 hidden sm:block" />
-        <label className="flex items-center gap-1.5 text-xs text-slate-500">
-          <Zap size={12} className="text-amber-500 shrink-0" />
+        <div className="h-5 w-px bg-[#E7E3D8] hidden sm:block" />
+        <label className="flex items-center gap-1.5 text-xs text-[#5C6B62]">
+          <Zap size={12} className="text-[#C9881F] shrink-0" />
           Ngày cụ thể
           <input type="date" value={specificDate} min={bounds.min || undefined} max={bounds.max || undefined}
             onChange={(e) => setSpecificDate(e.target.value)}
             disabled={!bounds.min}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40" />
+            className="bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 disabled:opacity-40" />
         </label>
         {specificDate && (
           <button onClick={() => setSpecificDate("")}
-            className="text-xs text-slate-400 hover:text-red-500 underline underline-offset-2 transition-colors">
-            Xóa
+            className="text-xs text-[#8A968C] hover:text-[#D94436] underline underline-offset-2 transition-colors">
+            Xoá
           </button>
         )}
       </div>
 
       {/* KPI chỉ số kinh doanh theo kỳ đang chọn (từ dữ liệu backend) — 2 hàng x 3 thẻ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard
+        <LedgerStat
           label="Số hóa đơn"
           value={bizRows.length ? fmt(periodBiz.invoices) : "—"}
-          sub="Giao dịch ghi nhận trong kỳ" trend="up" color="blue"
+          sub="Giao dịch ghi nhận trong kỳ" trend="up" delay={0}
         />
-        <StatCard
+        <LedgerStat
           label="Doanh thu"
           value={bizRows.length ? fmtMoney(periodBiz.revenue) : "—"}
-          sub={`Kỳ ${effRange.from ? `${formatDateVN(effRange.from)}${effRange.to !== effRange.from ? ` → ${formatDateVN(effRange.to)}` : ""}` : "—"}`} trend="up" color="green"
+          sub={`Kỳ ${effRange.from ? `${formatDateVN(effRange.from)}${effRange.to !== effRange.from ? ` → ${formatDateVN(effRange.to)}` : ""}` : "—"}`} trend="up" delay={50}
         />
-        <StatCard
+        <LedgerStat
           label="Giá trị trả"
           value={bizRows.length ? fmtMoney(periodBiz.returns) : "—"}
-          sub={`${periodBiz.revenue > 0 ? ((periodBiz.returns / periodBiz.revenue) * 100).toFixed(1) : "0"}% doanh thu`} trend="down" color="red"
+          sub={`${periodBiz.revenue > 0 ? ((periodBiz.returns / periodBiz.revenue) * 100).toFixed(1) : "0"}% doanh thu`}
+          trend="down" delay={100}
+          tone={periodBiz.revenue > 0 && periodBiz.returns / periodBiz.revenue > 0.05 ? "watch" : undefined}
         />
-        <StatCard
+        <LedgerStat
           label="Doanh thu thuần"
           value={bizRows.length ? fmtMoney(periodBiz.net) : "—"}
-          sub="Doanh thu − Giá trị trả" trend="up" color="purple"
+          sub="Doanh thu − Giá trị trả" trend="up" delay={150}
         />
-        <StatCard
+        <LedgerStat
           label="Tổng giá vốn"
           value={bizRows.length ? fmtMoney(periodBiz.cogs) : "—"}
-          sub="Giá vốn hàng bán ròng" trend="up" color="amber"
+          sub="Giá vốn hàng bán ròng" trend="up" delay={200}
         />
-        <StatCard
+        <LedgerStat
           label="Lợi nhuận gộp"
           value={bizRows.length ? fmtMoney(periodBiz.gross) : "—"}
-          sub={`Biên ${periodBiz.net > 0 ? ((periodBiz.gross / periodBiz.net) * 100).toFixed(1) : "0"}% trên DT thuần`} trend="up" color="blue"
+          sub={`Biên ${periodBiz.net > 0 ? ((periodBiz.gross / periodBiz.net) * 100).toFixed(1) : "0"}% trên DT thuần`}
+          trend="up" delay={250}
+          tone={bizRows.length ? (periodBiz.gross > 0 ? "good" : "risk") : undefined}
         />
       </div>
 
       {/* Xu hướng dự báo theo danh mục (backend) + chọn cửa sổ dự báo */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
-            <p className="text-sm font-semibold text-slate-900">Xu hướng dự báo theo danh mục</p>
-            <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-              Đơn vị: số lượng bán / ngày — model LightGBM{horizon ? `, kỳ ${horizon.from} → ${(winLastDate || horizon.to)}` : ""}
+            <p className="text-sm font-semibold text-[#14231D]">Xu hướng dự báo theo danh mục</p>
+            <p className="text-[10px] text-[#5C6B62] mt-0.5">
+              Đơn vị: số lượng bán / ngày{horizon ? ` — Kỳ ${horizon.from} → ${(winLastDate || horizon.to)}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono text-slate-400 uppercase mr-1">Cửa sổ</span>
+            <span className="text-[10px] text-[#8A968C] uppercase mr-1">Cửa sổ</span>
             {[7, 14, 21, 31].map((d) => (
               <button
                 key={d}
                 onClick={() => setTrendDays(d)}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${trendDays === d ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${trendDays === d ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "bg-white border-[#E7E3D8] text-[#5C6B62] hover:text-[#14231D]"}`}
               >
                 {d} ngày
               </button>
@@ -1337,13 +1343,13 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
                 </linearGradient>
               ))}
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E7E3D8" vertical={false} />
             <XAxis dataKey="date" tickFormatter={(v: string) => (v || "").slice(5)}
-              tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false}
+              tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false}
               tickFormatter={(v) => v >= 1000 ? `${v / 1000}B` : `${v}`} />
             <Tooltip content={<ChartTip />} />
-            <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
+            <Legend wrapperStyle={{ fontSize: "10px", color: "#5C6B62", paddingTop: 8 }} />
             {families.map((f, i) => (
               <Area key={f} type="monotone" dataKey={f} name={f}
                 stroke={CHART_COLORS[i % CHART_COLORS.length]} fill={`url(#grad-${i})`} strokeWidth={2} />
@@ -1354,48 +1360,64 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
 
       {/* Hàng biểu đồ lịch sử 1: chỉ số kinh doanh + top 10 nhóm hàng */}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-        <div className="xl:col-span-3 bg-white border border-slate-200 rounded-xl p-5">
-          <p className="text-sm font-semibold text-slate-900">Chỉ số kinh doanh theo thời gian</p>
-          <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-4">
-            Thang {granLabel}{!specificDate && customSpanDays <= 61 ? " (tự động)" : ""} · {effRange.from ? `${formatDateVN(effRange.from)} → ${formatDateVN(effRange.to)}` : "—"} · Quy đổi VND (tỷ giá tham chiếu 1 USD = 25.500₫) — ước tính từ số lượng bán × giá tham chiếu
-          </p>
+        <div className="xl:col-span-3 bg-white border border-[#E7E3D8] rounded-[14px] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-sm font-semibold text-[#14231D]">Chỉ số kinh doanh theo thời gian</p>
+              <p className="text-[10px] text-[#5C6B62] mt-0.5">
+                Thang {granLabel}{granularityLocked ? " (tự động)" : ""} · {effRange.from ? `${formatDateVN(effRange.from)} → ${formatDateVN(effRange.to)}` : "—"} · Đơn vị: USD theo giá tham chiếu — chỉ dùng so sánh nội bộ
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5" title={granularityLocked ? "Thang tự động theo khoảng đang chọn" : undefined}>
+              {([["day", "Ngày"], ["month", "Tháng"], ["quarter", "Quý"]] as [HistGranularity, string][]).map(([k, l]) => (
+                <button
+                  key={k}
+                  disabled={granularityLocked}
+                  onClick={() => setGranularity(k)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${effGranularity === k ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "bg-white border-[#E7E3D8] text-[#5C6B62] hover:text-[#14231D]"} ${granularityLocked ? "opacity-40 cursor-not-allowed" : ""}`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
           {!bounds.min || bizState === "loading" ? (
-            <div className="h-[260px] flex items-center justify-center text-slate-400 text-xs">Đang tải dữ liệu chỉ số kinh doanh...</div>
+            <div className="h-[260px] flex items-center justify-center text-[#8A968C] text-xs">Đang tải...</div>
           ) : trendChartData.length === 0 ? (
-            <div className="h-[260px] flex items-center justify-center text-slate-400 text-xs">Không có dữ liệu trong khoảng đã chọn.</div>
+            <div className="h-[260px] flex items-center justify-center text-[#8A968C] text-xs">Không có dữ liệu trong khoảng đã chọn.</div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={trendChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E7E3D8" vertical={false} />
                 <XAxis dataKey="label" interval="preserveStartEnd"
-                  tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={fmtMoneyCompact}
-                  tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false} />
                 <Tooltip content={<BizTip />} />
-                <Legend wrapperStyle={{ fontSize: "10px", color: "#64748b", fontFamily: "JetBrains Mono", paddingTop: 8 }} />
-                <Line type="monotone" dataKey="revenue" name="Doanh thu" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="returns" name="Trả hàng" stroke="#ef4444" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="grossProfit" name="Lợi nhuận gộp" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Legend wrapperStyle={{ fontSize: "10px", color: "#5C6B62", paddingTop: 8 }} />
+                <Line type="monotone" dataKey="revenue" name="Doanh thu" stroke="#1E5A46" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="returns" name="Trả hàng" stroke="#D94436" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="grossProfit" name="Lợi nhuận gộp" stroke="#3E8E5A" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           )}
         </div>
 
-        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
-          <p className="text-sm font-semibold text-slate-900">Top 10 nhóm hàng bán chạy</p>
-          <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-3">Trong khoảng thời gian đang chọn</p>
+        <div className="xl:col-span-2 bg-white border border-[#E7E3D8] rounded-[14px] p-5">
+          <p className="text-sm font-semibold text-[#14231D]">Top 10 nhóm hàng bán chạy</p>
+          <p className="text-[10px] text-[#5C6B62] mt-0.5 mb-3">Trong khoảng thời gian đang chọn</p>
           {top10Bars.length === 0 ? (
-            <div className="h-[300px] flex items-center justify-center text-slate-400 text-xs">Không có dữ liệu.</div>
+            <div className="h-[300px] flex items-center justify-center text-[#8A968C] text-xs">Không có dữ liệu.</div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={top10Bars} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                <XAxis type="number" tick={{ fill: "#64748b", fontSize: 9, fontFamily: "JetBrains Mono" }}
+                <CartesianGrid strokeDasharray="3 3" stroke="#E7E3D8" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "#5C6B62", fontSize: 9, fontFamily: "Be Vietnam Pro" }}
                   axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v)} />
                 <YAxis type="category" dataKey="name" width={140}
-                  tick={{ fill: "#64748b", fontSize: 9 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(59,130,246,0.06)" }} />
-                <Bar dataKey="value" name="Doanh số" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={14} />
+                  tick={{ fill: "#5C6B62", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(30, 90, 70, 0.06)" }} />
+                <Bar dataKey="value" name="Doanh số" fill="#1E5A46" radius={[0, 4, 4, 0]} barSize={14} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -1405,38 +1427,38 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
       {/* Chi tiết ngày cụ thể */}
       {specificDate && (
         <div className="space-y-4">
-          <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-            <Zap size={13} className="text-amber-500" />
+          <p className="text-sm font-semibold text-[#14231D] flex items-center gap-2">
+            <Zap size={13} className="text-[#C9881F]" />
             Chi tiết ngày {formatDateVN(specificDate)}
           </p>
           {!dayDetail || !dayDetail.found ? (
-            <div className="bg-amber-500/10 border border-amber-500/25 rounded-lg px-4 py-3 text-sm text-amber-600">
+            <div className="bg-[#E8A33D]/10 border border-[#E8A33D]/25 rounded-lg px-4 py-3 text-sm text-[#B87A1E]">
               Không có dữ liệu bán hàng cho ngày này{bounds.min ? ` (dataset: ${formatDateVN(bounds.min)} → ${formatDateVN(bounds.max)})` : ""}.
             </div>
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <StatCard label={`Tổng doanh số ${formatDateVN(specificDate)}`} value={fmt(dayDetail.total)}
-                  sub="Toàn bộ ngành hàng" trend="up" color="purple" />
-                <StatCard label="So với ngày trước đó"
+                <LedgerStat label={`Tổng doanh số ${formatDateVN(specificDate)}`} value={fmt(dayDetail.total)}
+                  sub="Toàn bộ ngành hàng" trend="up" delay={0} />
+                <LedgerStat label="So với ngày trước đó"
                   value={dayDetail.prevDiff != null ? `${dayDetail.prevDiff >= 0 ? "+" : ""}${dayDetail.prevDiff.toFixed(1)}%` : "—"}
-                  sub="Ngày có dữ liệu liền trước" trend={dayDetail.prevDiff == null || dayDetail.prevDiff >= 0 ? "up" : "down"} color="blue" />
-                <StatCard label="So với TB 7 ngày trước"
+                  sub="Ngày có dữ liệu liền trước" trend={dayDetail.prevDiff == null || dayDetail.prevDiff >= 0 ? "up" : "down"} delay={50} />
+                <LedgerStat label="So với TB 7 ngày trước"
                   value={dayDetail.avg7Diff != null ? `${dayDetail.avg7Diff >= 0 ? "+" : ""}${dayDetail.avg7Diff.toFixed(1)}%` : "—"}
-                  sub="Trung bình 7 ngày có dữ liệu trước đó" trend={dayDetail.avg7Diff == null || dayDetail.avg7Diff >= 0 ? "up" : "down"} color="green" />
+                  sub="Trung bình 7 ngày có dữ liệu trước đó" trend={dayDetail.avg7Diff == null || dayDetail.avg7Diff >= 0 ? "up" : "down"} delay={100} />
               </div>
-              <div className="bg-white border border-slate-200 rounded-xl p-5">
-                <p className="text-sm font-semibold text-slate-900 mb-1">Top ngành hàng trong ngày</p>
-                <p className="text-[10px] font-mono text-slate-500 mb-3">Đơn vị: số lượng bán</p>
+              <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-5">
+                <p className="text-sm font-semibold text-[#14231D] mb-1">Top ngành hàng trong ngày</p>
+                <p className="text-[10px] text-[#5C6B62] mb-3">Đơn vị: số lượng bán</p>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={dayDetail.bars} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                    <XAxis type="number" tick={{ fill: "#64748b", fontSize: 9, fontFamily: "JetBrains Mono" }}
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E7E3D8" horizontal={false} />
+                    <XAxis type="number" tick={{ fill: "#5C6B62", fontSize: 9, fontFamily: "Be Vietnam Pro" }}
                       axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v)} />
                     <YAxis type="category" dataKey="name" width={140}
-                      tick={{ fill: "#64748b", fontSize: 9 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(168,85,247,0.06)" }} />
-                    <Bar dataKey="value" name="Doanh số" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={14} />
+                      tick={{ fill: "#5C6B62", fontSize: 9 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(30, 90, 70, 0.06)" }} />
+                    <Bar dataKey="value" name="Doanh số" fill="#1E5A46" radius={[0, 4, 4, 0]} barSize={14} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1446,15 +1468,15 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
       )}
 
       {/* Gợi ý tự động */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <p className="text-sm font-semibold text-slate-900 mb-1 flex items-center gap-2">
-          <Zap size={13} className="text-amber-500" />
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-5">
+        <p className="text-sm font-semibold text-[#14231D] mb-1 flex items-center gap-2">
+          <Zap size={13} className="text-[#C9881F]" />
           Gợi ý từ dữ liệu
         </p>
-        <p className="text-[10px] font-mono text-slate-500 mb-4">Tự động phân tích theo khoảng thời gian đang chọn</p>
+        <p className="text-[10px] text-[#5C6B62] mb-4">Tự động phân tích theo khoảng thời gian đang chọn</p>
         <div className="space-y-2.5">
           {insights.length === 0 ? (
-            <p className="text-xs text-slate-500">Chưa đủ dữ liệu để đưa ra gợi ý.</p>
+            <p className="text-xs text-[#5C6B62]">Chưa đủ dữ liệu để đưa ra gợi ý.</p>
           ) : insights.map((it, i) => (
             <InsightCard key={i} tone={it.tone}>{it.text}</InsightCard>
           ))}
@@ -1462,10 +1484,10 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
       </div>
 
       {/* Thị phần danh mục — theo kỳ đang chọn */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <p className="text-sm font-semibold text-slate-900">Thị phần danh mục (Top 4 nhóm hàng)</p>
-        <p className="text-[10px] font-mono text-slate-500 mt-0.5 mb-3">
-          Theo kỳ đang chọn: {effRange.from ? `${formatDateVN(effRange.from)} → ${formatDateVN(effRange.to)}` : "—"}{branchId !== "all" ? ` — Cửa hàng #${branchId}` : ""}
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-5">
+        <p className="text-sm font-semibold text-[#14231D]">Thị phần danh mục (Top 4 nhóm hàng)</p>
+        <p className="text-[10px] text-[#5C6B62] mt-0.5 mb-3">
+          Theo kỳ đang chọn: {effRange.from ? `${formatDateVN(effRange.from)} → ${formatDateVN(effRange.to)}` : "—"}{branchId !== "all" ? ` — Cửa hàng ${branchId}` : ""}
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <ResponsiveContainer width="100%" height={180}>
@@ -1478,14 +1500,14 @@ function ProductAnalysis({ branchId, apiBase, auth, onAuthError }: {
           </ResponsiveContainer>
           <div className="space-y-1.5">
             {mixPie.length === 0 ? (
-              <p className="text-slate-500 text-xs">Chưa có dữ liệu thị phần trong kỳ này.</p>
+              <p className="text-[#5C6B62] text-xs">Chưa có dữ liệu thị phần trong kỳ này.</p>
             ) : mixPie.map((d, i) => (
               <div key={d.name} className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                  <span className="text-[11px] text-slate-700">{d.name}</span>
+                  <span className="text-[11px] text-[#2A3B32]">{d.name}</span>
                 </div>
-                <span className="text-[10px] font-mono text-slate-500">{d.share.toFixed(1)}% · {d.value.toLocaleString("vi-VN")} đơn vị</span>
+                <span className="text-[10px] text-[#5C6B62]">{d.share.toFixed(1)}% · {d.value.toLocaleString("vi-VN")} đơn vị</span>
               </div>
             ))}
           </div>
@@ -1517,6 +1539,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
   const [sortAsc, setSortAsc] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [retryTick, setRetryTick] = useState(0); // bấm "Thử lại" để tải lại danh sách
 
   // Nhập hàng (restock) — chỉ khi đang chọn 1 cửa hàng cụ thể
   const [restockTarget, setRestockTarget] = useState<ProductItem | null>(null);
@@ -1564,7 +1587,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
       .catch((e) => { if (!cancelled) setErr(e?.message || "Không tải được danh sách sản phẩm."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [page, search, family, filter, sortKey, sortAsc, apiBase, auth, isRealStore, onAuthError, branchId]);
+  }, [page, search, family, filter, sortKey, sortAsc, apiBase, auth, isRealStore, onAuthError, branchId, retryTick]);
 
   // Debounce ô tìm kiếm -> reset về trang 1
   useEffect(() => {
@@ -1603,7 +1626,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
       if (res.status === 401) { onAuthError(); return; }
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(typeof data?.detail === "string" ? data.detail : `Lỗi ${res.status}`);
-      setRestockMsg({ ok: true, text: data?.message || `Đã nhập ${qty} đơn vị cho #${restockTarget.item_nbr}.` });
+      setRestockMsg({ ok: true, text: data?.message || `Đã nhập ${qty} đơn vị cho mã ${restockTarget.item_nbr}.` });
       // Làm mới lại trang hiện tại để thấy tồn kho mới
       setLoading(true);
       apiFetch(apiBase, `/api/products?page=${page}&page_size=${pageSize}` +
@@ -1628,38 +1651,43 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
   };
 
   const statusBadge = (s: string) => {
-    const map: Record<string, { label: string; cls: string }> = {
-      active: { label: "Đang bán", cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/25" },
-      outofstock: { label: "Hết hàng", cls: "bg-red-500/15 text-red-600 border-red-500/25" },
+    const map: Record<string, { label: string; dot: string }> = {
+      active: { label: "Đang bán", dot: "bg-[#3E8E5A]" },
+      outofstock: { label: "Hết hàng", dot: "bg-[#D94436]" },
     };
     const cfg = map[s] || map.active;
-    return <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border whitespace-nowrap ${cfg.cls}`}>{cfg.label}</span>;
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] text-[#4A5A50] whitespace-nowrap">
+        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+        {cfg.label}
+      </span>
+    );
   };
 
   const SortIcon = ({ k }: { k: typeof sortKey }) =>
-    sortKey === k ? (sortAsc ? <ChevronUp size={12} className="text-blue-600" /> : <ChevronDown size={12} className="text-blue-600" />) : <ChevronUp size={12} className="text-slate-300" />;
+    sortKey === k ? (sortAsc ? <ChevronUp size={12} className="text-[#1E5A46]" /> : <ChevronDown size={12} className="text-[#1E5A46]" />) : <ChevronUp size={12} className="text-[#B5BEB4]" />;
 
   return (
     <div className="space-y-5">
       <SectionHeader
         title="Quản lý sản phẩm"
-        sub={`${total.toLocaleString("vi-VN")} sản phẩm trong danh mục${branchId !== "all" ? ` — Cửa hàng #${branchId}` : " — Toàn hệ thống"} · Nguồn: retail.db`}
+        sub={`${total.toLocaleString("vi-VN")} sản phẩm trong danh mục${branchId !== "all" ? ` — Cửa hàng ${branchId}` : " — Toàn hệ thống"} `}
       />
 
       <div className="flex flex-wrap gap-2.5 items-center">
         <div className="relative max-w-xs w-full min-w-[200px] flex-1 sm:flex-none">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A968C]" />
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Tìm theo tên sản phẩm, mã SP, nhóm hàng..."
-            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-4 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500/40 transition-colors"
+            className="w-full bg-white border border-[#E7E3D8] rounded-lg pl-8 pr-4 py-2 text-xs text-[#14231D] placeholder:text-[#8A968C] focus:outline-none focus:border-[#1E5A46]/40 transition-colors"
           />
         </div>
         <select
           value={family}
           onChange={(e) => { setFamily(e.target.value); setPage(1); }}
-          className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 focus:outline-none focus:border-blue-500/40 max-w-[180px]"
+          className="bg-white border border-[#E7E3D8] rounded-lg px-3 py-2 text-xs text-[#4A5A50] focus:outline-none focus:border-[#1E5A46]/40 max-w-[180px]"
         >
           <option value="all">Tất cả nhóm hàng</option>
           {families.map((f) => (<option key={f} value={f}>{f}</option>))}
@@ -1669,7 +1697,7 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
             <button
               key={f.key}
               onClick={() => { setFilter(f.key as typeof filter); setPage(1); }}
-              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${filter === f.key ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900"}`}
+              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${filter === f.key ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "bg-white border-[#E7E3D8] text-[#5C6B62] hover:text-[#14231D]"}`}
             >
               {f.label}
             </button>
@@ -1678,92 +1706,94 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
       </div>
 
       {err && (
-        <div className="bg-red-500/10 border border-red-500/25 rounded-lg px-4 py-3 text-sm text-red-600">{err}</div>
+        <div className="bg-[#D94436]/10 border border-[#D94436]/25 rounded-lg px-4 py-3 text-sm text-[#B93727] flex items-center justify-between gap-3">
+          <span>{err}</span>
+          <button
+            onClick={() => { setLoading(true); setRetryTick((t) => t + 1); }}
+            className="flex-shrink-0 text-xs font-medium text-[#1E5A46] bg-white border border-[#1E5A46]/25 hover:bg-[#EAF3EE] rounded-lg px-3 py-1.5 transition-colors"
+          >
+            Thử lại
+          </button>
+        </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/50">
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                  <button className="flex items-center gap-1 hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("item")}>Mã SP <SortIcon k="item" /></button>
+              <tr className="border-b border-[#E7E3D8] bg-[#F6F4EE]/50">
+                <th className="text-left px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider">
+                  <button className="flex items-center gap-1 hover:text-[#14231D] transition-colors uppercase" onClick={() => toggleSort("name")}>Sản phẩm <SortIcon k="name" /></button>
                 </th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                  <button className="flex items-center gap-1 hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("name")}>Tên sản phẩm <SortIcon k="name" /></button>
+                <th className="text-left px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider">Nhóm hàng</th>
+                <th className="text-center px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider">Dễ hỏng</th>
+                <th className="text-right px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider">
+                  <button className="flex items-center gap-1 ml-auto hover:text-[#14231D] transition-colors uppercase" onClick={() => toggleSort("stock")}>Tồn kho <SortIcon k="stock" /></button>
                 </th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Nhóm hàng</th>
-                <th className="text-left px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Class</th>
-                <th className="text-center px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Dễ hỏng</th>
-                <th className="text-right px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                  <button className="flex items-center gap-1 ml-auto hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("stock")}>Tồn kho <SortIcon k="stock" /></button>
+                <th className="text-right px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider">
+                  <button className="flex items-center gap-1 ml-auto hover:text-[#14231D] transition-colors uppercase" onClick={() => toggleSort("sold")}>Bán 2016 <SortIcon k="sold" /></button>
                 </th>
-                <th className="text-right px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                  <button className="flex items-center gap-1 ml-auto hover:text-slate-900 transition-colors uppercase" onClick={() => toggleSort("sold")}>Bán 2016 <SortIcon k="sold" /></button>
-                </th>
-                <th className="text-right px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider" title="Tổng dự báo 16 ngày tới (toàn chuỗi) — dải tin cậy 1σ theo RMSLE của family">
+                <th className="text-right px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider" title="Tổng dự báo 16 ngày tới (toàn chuỗi) — dải tin cậy 1σ theo RMSLE của family">
                   Dự báo 16N
                 </th>
-                <th className="text-center px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider" title="A: nhóm chiếm 80% doanh số · B: đến 95% · C: dài đuôi">
+                <th className="text-center px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider" title="A: nhóm chiếm 80% doanh số · B: đến 95% · C: dài đuôi">
                   Lớp ABC
                 </th>
-                <th className="text-center px-4 py-3 text-[10px] font-mono text-slate-500 uppercase tracking-wider">Trạng thái</th>
+                <th className="text-center px-4 py-3 text-[10px] text-[#5C6B62] uppercase tracking-wider">Trạng thái</th>
                 {branchId !== "all" && <th className="px-4 py-3" />}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={branchId !== "all" ? 11 : 10} className="text-center py-8 text-slate-500 text-sm">
-                  <RefreshCw size={14} className="animate-spin inline mr-2" />Đang tải...
+                <tr><td colSpan={branchId !== "all" ? 9 : 8} className="text-center py-8 text-[#5C6B62] text-sm">
+                  <RefreshCw size={14} className="animate-spin inline mr-2 text-[#3E8E5A]" />Đang tải...
                 </td></tr>
               ) : products.length === 0 ? (
-                <tr><td colSpan={branchId !== "all" ? 11 : 10} className="text-center py-8 text-slate-500 text-sm">Không có sản phẩm nào khớp bộ lọc.</td></tr>
+                <tr><td colSpan={branchId !== "all" ? 9 : 8} className="text-center py-8 text-[#5C6B62] text-sm">Không có sản phẩm nào khớp bộ lọc — thử xoá từ khoá hoặc chọn nhóm hàng khác.</td></tr>
               ) : products.map((p) => (
-                <tr key={p.item_nbr} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3"><span className="text-xs font-mono font-medium text-slate-900">#{p.item_nbr}</span></td>
+                <tr key={p.item_nbr} className="border-b border-[#EFECE3] last:border-0 hover:bg-[#F6F4EE] transition-colors">
                   <td className="px-4 py-3">
-                    <div className="max-w-[240px]">
-                      <div className="text-xs text-slate-900 truncate" title={p.name ?? undefined}>{p.name ?? "—"}</div>
-                      <div className="text-[10px] font-mono text-slate-400 sm:hidden">#{p.item_nbr}</div>
+                    <div className="max-w-[260px]">
+                      <div className="text-xs font-medium text-[#14231D] truncate" title={p.name ?? undefined}>{p.name ?? `Mã ${p.item_nbr}`}</div>
+                      <div className="text-[10px] text-[#8A968C] mt-0.5">Mã {p.item_nbr}</div>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md whitespace-nowrap">{p.family}</span>
+                    <span className="text-[10px] bg-[#EDEAE0] text-[#4A5A50] px-2 py-0.5 rounded-md whitespace-nowrap">{p.family}</span>
                   </td>
-                  <td className="px-4 py-3"><span className="text-[10px] font-mono text-slate-500">{p.class_code ?? "—"}</span></td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-md ${p.perishable === 1 ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-md ${p.perishable === 1 ? "bg-[#D94436]/10 text-[#B93727]" : "bg-[#3E8E5A]/10 text-[#2E7A4B]"}`}>
                       {p.perishable === 1 ? "Có" : "Không"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`text-xs font-mono ${p.stock === 0 ? "text-red-500" : p.stock < stockWarnThreshold ? "text-orange-500" : "text-emerald-500"}`}>
+                    <span className={`text-xs ${p.stock === 0 ? "text-[#D94436]" : p.stock < stockWarnThreshold ? "text-[#C9881F]" : "text-[#3E8E5A]"}`}>
                       {Math.round(p.stock).toLocaleString("vi-VN")}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="text-xs font-mono text-slate-700">{Math.round(p.sold_2016).toLocaleString("vi-VN")}</span>
+                    <span className="text-xs text-[#2A3B32]">{Math.round(p.sold_2016).toLocaleString("vi-VN")}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="text-xs font-mono text-purple-600">{p.fc_total_16d != null ? Math.round(p.fc_total_16d).toLocaleString("vi-VN") : "—"}</span>
+                    <span className="text-xs text-[#7C5CBF]">{p.fc_total_16d != null ? Math.round(p.fc_total_16d).toLocaleString("vi-VN") : "—"}</span>
                     {p.fc_low != null && p.fc_high != null && (
-                      <p className="text-[9px] font-mono text-slate-400 mt-0.5">
+                      <p className="text-[9px] text-[#8A968C] mt-0.5">
                         {Math.round(p.fc_low).toLocaleString("vi-VN")}–{Math.round(p.fc_high).toLocaleString("vi-VN")}
                       </p>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     {p.abc_class
-                      ? <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${abcBadgeClass(p.abc_class)}`}>{p.abc_class}</span>
-                      : <span className="text-[10px] font-mono text-slate-300">—</span>}
+                      ? <span className={`text-[10px] px-2 py-0.5 rounded-full border ${abcBadgeClass(p.abc_class)}`}>{p.abc_class}</span>
+                      : <span className="text-[10px] text-[#B5BEB4]">—</span>}
                   </td>
                   <td className="px-4 py-3 text-center">{statusBadge(p.status)}</td>
                   {branchId !== "all" && (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <button
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                          title={`Nhập thêm hàng cho cửa hàng #${branchId}`}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-[#1E5A46] hover:bg-[#EAF3EE] rounded-md transition-colors"
+                          title={`Nhập thêm hàng cho Cửa hàng ${branchId}`}
                           onClick={() => { setRestockTarget(p); setRestockQty("50"); setRestockMsg(null); }}
                         >
                           <PackagePlus size={13} />
@@ -1779,22 +1809,22 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
         </div>
 
         {/* Phân trang */}
-        <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-between flex-wrap gap-2">
-          <p className="text-slate-500 text-xs">
+        <div className="px-5 py-3 border-t border-[#E7E3D8] flex items-center justify-between flex-wrap gap-2">
+          <p className="text-[#5C6B62] text-xs">
             Trang {page}/{totalPages} · {total.toLocaleString("vi-VN")} sản phẩm
-            {lowStockCount > 0 && <> · <span className="text-orange-500">{lowStockCount.toLocaleString("vi-VN")} cần bổ sung tồn kho</span></>}
+            {lowStockCount > 0 && <> · <span className="text-[#C9881F]">{lowStockCount.toLocaleString("vi-VN")} cần bổ sung tồn kho</span></>}
           </p>
           <div className="flex items-center gap-1.5">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-slate-900 disabled:opacity-30 transition-colors"
+              className="p-1.5 rounded-md border border-[#E7E3D8] text-[#5C6B62] hover:text-[#14231D] disabled:opacity-30 transition-colors"
             ><ChevronLeft size={13} /></button>
-            <span className="text-xs font-mono text-slate-500 w-14 text-center">{page} / {totalPages}</span>
+            <span className="text-xs text-[#5C6B62] w-14 text-center">{page} / {totalPages}</span>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-slate-900 disabled:opacity-30 transition-colors"
+              className="p-1.5 rounded-md border border-[#E7E3D8] text-[#5C6B62] hover:text-[#14231D] disabled:opacity-30 transition-colors"
             ><ChevronRight size={13} /></button>
           </div>
         </div>
@@ -1802,20 +1832,20 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
 
       {/* Dialog nhập hàng */}
       {restockTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !restocking && setRestockTarget(null)}>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-sm p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#14231D]/40 p-4" onClick={() => !restocking && setRestockTarget(null)}>
+          <div className="bg-white rounded-[14px] border border-[#E7E3D8] shadow-2xl w-full max-w-sm p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-900" title={restockTarget.name ?? undefined}>
-                  Nhập hàng — {restockTarget.name ?? `#${restockTarget.item_nbr}`}
+                <p className="text-sm font-semibold text-[#14231D]" title={restockTarget.name ?? undefined}>
+                  Nhập hàng — {restockTarget.name ?? `Mã ${restockTarget.item_nbr}`}
                 </p>
-                <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-                  #{restockTarget.item_nbr} · Cửa hàng #{branchId} · Tồn kho hiện tại: {Math.round(restockTarget.stock).toLocaleString("vi-VN")}
+                <p className="text-[10px] text-[#5C6B62] mt-0.5">
+                  Mã {restockTarget.item_nbr} · Cửa hàng {branchId} · Tồn kho hiện tại: {Math.round(restockTarget.stock).toLocaleString("vi-VN")}
                 </p>
               </div>
             </div>
             <label className="block">
-              <span className="block text-[10px] font-mono text-slate-500 uppercase tracking-wider mb-1">Số lượng nhập thêm</span>
+              <span className="block text-[10px] text-[#5C6B62] uppercase tracking-wider mb-1">Số lượng nhập thêm</span>
               <input
                 type="number"
                 min={1}
@@ -1823,19 +1853,19 @@ function ProductManagement({ branchId, apiBase, auth, onAuthError }: {
                 onChange={(e) => setRestockQty(e.target.value)}
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && submitRestock()}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500/40"
+                className="w-full bg-[#F6F4EE] border border-[#E7E3D8] rounded-lg px-3 py-2 text-xs text-[#14231D] focus:outline-none focus:border-[#1E5A46]/40"
               />
             </label>
             {restockMsg && (
-              <div className={`rounded-lg px-3 py-2 text-[11px] ${restockMsg.ok ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/25" : "bg-red-500/10 text-red-600 border border-red-500/25"}`}>
+              <div className={`rounded-lg px-3 py-2 text-[11px] ${restockMsg.ok ? "bg-[#3E8E5A]/10 text-[#2E7A4B] border border-[#3E8E5A]/25" : "bg-[#D94436]/10 text-[#B93727] border border-[#D94436]/25"}`}>
                 {restockMsg.text}
               </div>
             )}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setRestockTarget(null)} disabled={restocking}
-                className="px-3 py-2 text-xs text-slate-500 hover:text-slate-900 rounded-lg transition-colors">Đóng</button>
+                className="px-3 py-2 text-xs text-[#5C6B62] hover:text-[#14231D] rounded-lg transition-colors">Đóng</button>
               <button onClick={submitRestock} disabled={restocking}
-                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 bg-[#1E5A46] hover:bg-[#174A39] disabled:opacity-40 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors">
                 {restocking ? "Đang xử lý..." : "Xác nhận nhập"}
               </button>
             </div>
@@ -1928,12 +1958,12 @@ function BranchBar({ branches, branchId, onSelect }: {
   }, [branches.length]);
 
   return (
-    <div className="border-b border-slate-200 bg-white flex items-stretch">
+    <div className="border-b border-[#E7E3D8] bg-[#F6F4EE] flex items-stretch">
       <button
         onClick={() => scrollByAmount(-1)}
         disabled={!edges.left}
         title="Cuộn sang trái"
-        className="px-1.5 text-slate-400 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors shrink-0"
+        className="px-1.5 text-[#8A968C] hover:text-[#14231D] disabled:opacity-30 disabled:hover:text-[#8A968C] transition-colors shrink-0"
       >
         <ChevronLeft size={14} />
       </button>
@@ -1945,18 +1975,16 @@ function BranchBar({ branches, branchId, onSelect }: {
         className="flex-1 min-w-0 overflow-x-auto scrollbar-thin-x cursor-grab active:cursor-grabbing select-none"
       >
         <div className="flex items-center gap-1.5 min-w-max py-2 px-1">
-          <Building2 size={13} className="text-slate-400 mr-1 shrink-0" />
           {branches.map((b) => {
             const isActive = branchId === b.id;
             return (
               <button
                 key={b.id}
                 onClick={() => { if (!draggedRef.current) onSelect(b.id); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs whitespace-nowrap transition-all ${isActive ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900 hover:border-slate-300"}`}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs whitespace-nowrap transition-all ${isActive ? "bg-[#1E5A46] text-white font-medium" : "text-[#5C6B62] hover:bg-[#EDEAE0] hover:text-[#14231D]"}`}
               >
-                {b.id !== "all" && <MapPin size={10} className="shrink-0" />}
                 {b.label}
-                {isActive && b.id !== "all" && (<span className="text-[9px] font-normal text-blue-400 ml-0.5 hidden sm:inline">{b.city}</span>)}
+                {isActive && b.id !== "all" && (<span className="text-[10px] font-normal text-white/70 ml-0.5 hidden sm:inline">{b.city}</span>)}
               </button>
             );
           })}
@@ -1966,7 +1994,7 @@ function BranchBar({ branches, branchId, onSelect }: {
         onClick={() => scrollByAmount(1)}
         disabled={!edges.right}
         title="Cuộn sang phải"
-        className="px-1.5 text-slate-400 hover:text-slate-900 disabled:opacity-30 disabled:hover:text-slate-400 transition-colors shrink-0"
+        className="px-1.5 text-[#8A968C] hover:text-[#14231D] disabled:opacity-30 disabled:hover:text-[#8A968C] transition-colors shrink-0"
       >
         <ChevronRight size={14} />
       </button>
@@ -2152,34 +2180,34 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
   const isNeutral = Number(multiplier) === 1 && promoMode === "real" && oil === ""
     && !trafficOn && eventType === "none" && stock === "" && leadTime === "";
 
-  const inputCls = "bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-blue-500/40 disabled:opacity-40";
-  const knobLabel = "text-[10px] font-mono text-slate-500 uppercase tracking-wide";
+  const inputCls = "bg-white border border-[#E7E3D8] rounded-lg px-2.5 py-1.5 text-xs text-[#2A3B32] focus:outline-none focus:border-[#1E5A46]/40 disabled:opacity-40";
+  const knobLabel = "text-[10px] text-[#5C6B62] uppercase tracking-wide";
 
   return (
     <div className="space-y-5">
       <SectionHeader title="Kịch bản What-if" sub="Sửa số liệu → dự báo lại bằng mô hình thật → phân tích tác động tức thì" />
 
       {/* Cấu hình kịch bản */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+      <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-4 space-y-4">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <label className="flex items-center gap-2 text-xs text-slate-500">
-            <MapPin size={12} className="text-slate-400 shrink-0" /> Cửa hàng
+          <label className="flex items-center gap-2 text-xs text-[#5C6B62]">
+            <MapPin size={12} className="text-[#8A968C] shrink-0" /> Cửa hàng
             <select value={store ?? ""} onChange={(e) => setStore(Number(e.target.value))} className={inputCls}>
               {(stores.length ? stores : (store ? [store] : [])).map((s) => (
-                <option key={s} value={s}>Cửa hàng #{s}</option>
+                <option key={s} value={s}>Cửa hàng {s}</option>
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-2 text-xs text-slate-500">
-            <Package size={12} className="text-slate-400 shrink-0" /> Ngành hàng
+          <label className="flex items-center gap-2 text-xs text-[#5C6B62]">
+            <Package size={12} className="text-[#8A968C] shrink-0" /> Ngành hàng
             <select value={family} onChange={(e) => setFamily(e.target.value)} className={`${inputCls} max-w-[220px]`}>
               <option value="">— chọn ngành hàng —</option>
               {families.map((f) => (<option key={f} value={f}>{f}</option>))}
             </select>
           </label>
           {meta && (
-            <span className="text-[10px] font-mono text-slate-400">
-              {meta.sku_count} SKU · giá ref ${meta.unit_price}/đơn vị · KM baseline {meta.baseline_promo_days}/16 ngày
+            <span className="text-[10px] text-[#8A968C]">
+              {meta.sku_count} mã hàng · giá tham chiếu ${meta.unit_price}/đơn vị · khuyến mãi lịch {meta.baseline_promo_days}/16 ngày
             </span>
           )}
         </div>
@@ -2187,64 +2215,64 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-4">
           {/* 1. Hệ số nhu cầu */}
           <div className="space-y-1.5">
-            <p className={knobLabel}>1 · Hệ số nhu cầu thị trường</p>
+            <p className={knobLabel}>Hệ số nhu cầu thị trường</p>
             <div className="flex items-center gap-2">
               <input type="range" min={0.5} max={2} step={0.05} value={multiplier}
-                onChange={(e) => setMultiplier(Number(e.target.value))} className="flex-1 accent-blue-600" />
-              <span className="text-xs font-mono text-slate-700 w-14 text-right">×{multiplier.toFixed(2)}</span>
+                onChange={(e) => setMultiplier(Number(e.target.value))} className="flex-1 accent-[#1E5A46]" />
+              <span className="text-xs text-[#2A3B32] w-14 text-right">×{multiplier.toFixed(2)}</span>
             </div>
-            <p className="text-[10px] text-slate-400">1.00 = giữ nguyên · 1.50 = +50% · 0.80 = −20%</p>
+            <p className="text-[10px] text-[#8A968C]">1.00 = giữ nguyên · 1.50 = +50% · 0.80 = −20%</p>
           </div>
 
           {/* 2. Khuyến mãi */}
           <div className="space-y-1.5">
-            <p className={knobLabel}>2 · Khuyến mãi (onpromotion)</p>
+            <p className={knobLabel}>Khuyến mãi</p>
             <div className="flex gap-1.5">
               <button onClick={() => setPromoMode("real")}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${promoMode === "real" ? "bg-blue-50 border-blue-200 text-blue-600" : "border-slate-200 text-slate-500"}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${promoMode === "real" ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "border-[#E7E3D8] text-[#5C6B62]"}`}>
                 Lịch thật{meta ? ` (${meta.baseline_promo_days} ngày)` : ""}
               </button>
               <button onClick={() => setPromoMode("custom")}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${promoMode === "custom" ? "bg-blue-50 border-blue-200 text-blue-600" : "border-slate-200 text-slate-500"}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${promoMode === "custom" ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "border-[#E7E3D8] text-[#5C6B62]"}`}>
                 Tùy chỉnh
               </button>
             </div>
             {promoMode === "custom" && (
               <div className="flex items-center gap-2">
                 <input type="range" min={0} max={16} step={1} value={promoDays}
-                  onChange={(e) => setPromoDays(Number(e.target.value))} className="flex-1 accent-blue-600" />
-                <span className="text-xs font-mono text-slate-700 w-14 text-right">{promoDays} ngày</span>
+                  onChange={(e) => setPromoDays(Number(e.target.value))} className="flex-1 accent-[#1E5A46]" />
+                <span className="text-xs text-[#2A3B32] w-14 text-right">{promoDays} ngày</span>
               </div>
             )}
           </div>
 
           {/* 3. Giá dầu */}
           <div className="space-y-1.5">
-            <p className={knobLabel}>3 · Giá dầu (USD)</p>
+            <p className={knobLabel}>Giá dầu (USD)</p>
             <div className="flex items-center gap-2">
               <input type="number" min={20} max={200} step={0.5} value={oil}
                 onChange={(e) => setOil(e.target.value)} placeholder={meta?.current_oil_price ? String(meta.current_oil_price) : "giá thật"}
                 className={`${inputCls} w-28`} />
               {oil !== "" && (
-                <button onClick={() => setOil("")} className="text-[10px] text-slate-400 hover:text-blue-600 underline underline-offset-2">Dùng giá thật</button>
+                <button onClick={() => setOil("")} className="text-[10px] text-[#8A968C] hover:text-[#1E5A46] underline underline-offset-2">Dùng giá hiện tại</button>
               )}
             </div>
-            <p className="text-[10px] text-slate-400">Để trống = giá dầu thật từ oil.csv</p>
+            <p className="text-[10px] text-[#8A968C]">Để trống = giá dầu hiện tại</p>
           </div>
 
           {/* 4. Lưu lượng khách */}
           <div className="space-y-1.5">
-            <p className={knobLabel}>4 · Lưu lượng khách</p>
+            <p className={knobLabel}>Lưu lượng khách</p>
             <div className="flex items-center gap-2">
               <button onClick={() => setTrafficOn(!trafficOn)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${trafficOn ? "bg-blue-50 border-blue-200 text-blue-600" : "border-slate-200 text-slate-500"}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${trafficOn ? "bg-[#EAF3EE] border-[#BFD8C9] text-[#1E5A46]" : "border-[#E7E3D8] text-[#5C6B62]"}`}>
                 {trafficOn ? "Đang chỉnh" : "Giữ nguyên"}
               </button>
               {trafficOn && (
                 <>
                   <input type="range" min={-50} max={100} step={5} value={traffic}
-                    onChange={(e) => setTraffic(Number(e.target.value))} className="flex-1 accent-blue-600" />
-                  <span className="text-xs font-mono text-slate-700 w-14 text-right">{traffic > 0 ? "+" : ""}{traffic}%</span>
+                    onChange={(e) => setTraffic(Number(e.target.value))} className="flex-1 accent-[#1E5A46]" />
+                  <span className="text-xs text-[#2A3B32] w-14 text-right">{traffic > 0 ? "+" : ""}{traffic}%</span>
                 </>
               )}
             </div>
@@ -2252,7 +2280,7 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
 
           {/* 5. Sự kiện bất ngờ */}
           <div className="space-y-1.5">
-            <p className={knobLabel}>5 · Sự kiện bất ngờ</p>
+            <p className={knobLabel}>Sự kiện bất ngờ</p>
             <div className="flex items-center gap-2">
               <select value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)} className={inputCls}>
                 <option value="none">Không có</option>
@@ -2264,7 +2292,7 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
                   <input type="number" min={1} max={16} value={eventDays}
                     onChange={(e) => setEventDays(Math.max(1, Math.min(16, Number(e.target.value) || 1)))}
                     className={`${inputCls} w-16`} />
-                  <span className="text-[10px] text-slate-400">ngày đầu kỳ</span>
+                  <span className="text-[10px] text-[#8A968C]">ngày đầu kỳ</span>
                 </div>
               )}
             </div>
@@ -2272,116 +2300,116 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
 
           {/* 6. Tồn kho + lead time */}
           <div className="space-y-1.5">
-            <p className={knobLabel}>6 · Tồn kho & lead time (tầng phân tích)</p>
+            <p className={knobLabel}>Tồn kho & thời gian bổ sung hàng</p>
             <div className="flex items-center gap-2 flex-wrap">
               <input type="number" min={0} step={1} value={stock} onChange={(e) => setStock(e.target.value)}
                 placeholder={meta ? `tồn thật ${Math.round(meta.default_stock)}` : "tồn thật"} className={`${inputCls} w-32`} />
-              <input type="number" min={0} max={60} step={0.5} value={leadTime} onChange={(e) => setLeadTime(e.target.value)}
-                placeholder={meta ? `LT ${meta.default_lead_time} ngày` : "lead time"} className={`${inputCls} w-24`} />
-              {(stock !== "" || leadTime !== "") && (
-                <button onClick={() => { setStock(""); setLeadTime(""); }}
-                  className="text-[10px] text-slate-400 hover:text-blue-600 underline underline-offset-2">Dùng giá trị thật</button>
-              )}
+                <input type="number" min={0} max={60} step={0.5} value={leadTime} onChange={(e) => setLeadTime(e.target.value)}
+                  placeholder={meta ? `bổ sung ${meta.default_lead_time} ngày` : "thời gian bổ sung"} className={`${inputCls} w-28`} />
+                {(stock !== "" || leadTime !== "") && (
+                  <button onClick={() => { setStock(""); setLeadTime(""); }}
+                    className="text-[10px] text-[#8A968C] hover:text-[#1E5A46] underline underline-offset-2">Về giá trị hiện tại</button>
+                )}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3 pt-1">
           <button onClick={runScenario} disabled={running || !store || !family}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium px-4 py-2.5 rounded-lg transition-colors">
+            className="flex items-center gap-2 bg-[#1E5A46] hover:bg-[#174A39] disabled:opacity-40 text-white text-xs font-medium px-4 py-2.5 rounded-lg transition-colors">
             {running ? <RefreshCw size={13} className="animate-spin" /> : <FlaskConical size={13} />}
             {running ? "Đang chạy dự báo..." : "Chạy kịch bản"}
           </button>
           {isNeutral && !running && (
-            <span className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+            <span className="text-[10px] text-[#C9881F] bg-[#E8A33D]/10 border border-[#E8A33D]/20 rounded-lg px-2.5 py-1.5">
               Chưa chỉnh số liệu nào — kết quả sẽ xấp xỉ hiện tại, dùng để kiểm tra mô hình.
             </span>
           )}
         </div>
         {metaErr && (
-          <p className="text-[11px] text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-2.5 py-2">{metaErr}</p>
+          <p className="text-[11px] text-[#D94436] bg-[#D94436]/10 border border-[#D94436]/20 rounded-lg px-2.5 py-2">{metaErr}</p>
         )}
       </div>
 
       {/* Lỗi */}
       {err && (
-        <div className="bg-red-500/10 border border-red-500/25 rounded-lg px-4 py-3 text-sm text-red-600">{err}</div>
+        <div className="bg-[#D94436]/10 border border-[#D94436]/25 rounded-lg px-4 py-3 text-sm text-[#B93727]">{err}</div>
       )}
 
       {/* Kết quả */}
       {result && kpi && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Dự báo kịch bản (tổng kỳ)" value={fmt(kpi.scenario_total)}
-              sub={`Hiện tại: ${fmt(kpi.baseline_total)} · nguồn: ${result.source === "ml_service" ? "model thật" : "xấp xỉ"}`}
-              trend={kpi.delta >= 0 ? "up" : "down"} color="purple" />
-            <StatCard label="Thay đổi so với hiện tại"
+            <LedgerStat label="Dự báo kịch bản (tổng kỳ)" value={fmt(kpi.scenario_total)}
+              sub={`Hiện tại: ${fmt(kpi.baseline_total)} đơn vị`}
+              trend={kpi.delta >= 0 ? "up" : "down"} delay={0} />
+            <LedgerStat label="Thay đổi so với hiện tại"
               value={`${kpi.delta_pct !== null ? (kpi.delta_pct > 0 ? "+" : "") + kpi.delta_pct.toFixed(1) + "%" : "—"}`}
-              sub={`${fmt(kpi.delta)} đơn vị`} trend={kpi.delta >= 0 ? "up" : "down"}
-              color={kpi.delta >= 0 ? "green" : "amber"} />
-            <StatCard label={kpi.will_stockout ? "Thiếu hàng (nếu không nhập)" : kpi.overstock ? "Dư tồn" : "Đủ hàng"}
+              sub={`${fmt(kpi.delta)} đơn vị`} trend={kpi.delta >= 0 ? "up" : "down"} delay={60} />
+            <LedgerStat label={kpi.will_stockout ? "Thiếu hàng (nếu không nhập)" : kpi.overstock ? "Dư tồn" : "Đủ hàng"}
               value={fmt(kpi.will_stockout ? kpi.shortfall : kpi.overstock ? kpi.excess : 0)}
               sub={`Tồn ${fmt(kpi.stock)} · phủ ~${kpi.days_of_cover} ngày`}
-              trend={kpi.will_stockout ? "down" : "up"} color={kpi.will_stockout ? "amber" : "green"} />
-            <StatCard label="Doanh thu kỳ vọng" value={`$${fmtMoney(kpi.expected_revenue_usd)}`}
-              sub={kpi.will_stockout ? `Rủi ro mất ~$${fmtMoney(kpi.lost_revenue_usd)}` : `Hiện tại: $${fmtMoney(kpi.baseline_revenue_usd)}`}
-              trend="up" color="blue" />
+              trend={kpi.will_stockout ? "down" : "up"} delay={120}
+              tone={kpi.will_stockout ? "risk" : kpi.overstock ? "watch" : "good"} />
+            <LedgerStat label="Doanh thu kỳ vọng" value={fmtMoney(kpi.expected_revenue_usd)}
+              sub={kpi.will_stockout ? `Rủi ro mất ~${fmtMoney(kpi.lost_revenue_usd)}` : `Hiện tại: ${fmtMoney(kpi.baseline_revenue_usd)}`}
+              trend="up" delay={180} />
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
+            <div className="xl:col-span-2 bg-white border border-[#E7E3D8] rounded-[14px] p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Dự báo theo ngày: hiện tại vs kịch bản</p>
-                  <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-                    {result.family} · cửa hàng #{result.store_nbr} · {result.horizon_days} ngày
+                  <p className="text-sm font-semibold text-[#14231D]">Dự báo theo ngày: hiện tại vs kịch bản</p>
+                  <p className="text-[10px] text-[#5C6B62] mt-0.5">
+                    {result.family} · Cửa hàng {result.store_nbr} · {result.horizon_days} ngày
                   </p>
                 </div>
-                <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
-                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-slate-400 rounded inline-block" />Hiện tại</span>
-                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-blue-600 rounded inline-block" />Kịch bản</span>
+                <div className="flex items-center gap-4 text-[10px] text-[#5C6B62]">
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-[#B5BEB4] rounded inline-block" />Hiện tại</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-[#1E5A46] rounded inline-block" />Kịch bản</span>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E3D8" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#5C6B62", fontSize: 10, fontFamily: "Be Vietnam Pro" }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
-                  <Line type="monotone" dataKey="hientai" name="Hiện tại" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                  <Line type="monotone" dataKey="kichban" name="Kịch bản" stroke="#2563eb" strokeWidth={2.5}
-                    dot={{ fill: "#2563eb", r: 3, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="hientai" name="Hiện tại" stroke="#B5BEB4" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  <Line type="monotone" dataKey="kichban" name="Kịch bản" stroke="#1E5A46" strokeWidth={2.5}
+                    dot={{ fill: "#1E5A46", r: 3, strokeWidth: 0 }} activeDot={{ r: 4 }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
 
             <div className="space-y-4">
-              <div className={`border rounded-xl p-5 ${kpi.will_stockout ? "bg-red-500/5 border-red-500/25" : kpi.overstock ? "bg-amber-500/5 border-amber-500/25" : "bg-emerald-500/5 border-emerald-500/25"}`}>
-                <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+              <div className={`border rounded-[14px] p-5 ${kpi.will_stockout ? "bg-[#D94436]/5 border-[#D94436]/25" : kpi.overstock ? "bg-[#E8A33D]/5 border-[#E8A33D]/25" : "bg-[#3E8E5A]/5 border-[#3E8E5A]/25"}`}>
+                <p className="text-[10px] uppercase tracking-[0.06em] font-semibold text-[#5C6B62] mb-2">
                   Kết luận · rủi ro {kpi.risk_level}
                 </p>
-                <p className="text-sm text-slate-800 whitespace-pre-line leading-relaxed">{result.analysis}</p>
+                <p className="text-sm text-[#1B2C23] whitespace-pre-line leading-relaxed">{result.analysis}</p>
               </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-                <p className="text-[10px] font-mono uppercase tracking-widest text-blue-500 mb-2">Khuyến nghị hành động</p>
-                <p className="text-sm text-slate-800 leading-relaxed">{result.recommendation}</p>
+              <div className="bg-[#EAF3EE] border border-[#BFD8C9] rounded-[14px] p-5">
+                <p className="text-[10px] uppercase tracking-[0.06em] font-semibold text-[#1E5A46] mb-2">Khuyến nghị hành động</p>
+                <p className="text-sm text-[#1B2C23] leading-relaxed">{result.recommendation}</p>
               </div>
             </div>
           </div>
 
           {/* Top SKU biến động */}
           {result.top_sku_movements.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="bg-white border border-[#E7E3D8] rounded-[14px] p-5">
               <div className="flex items-baseline justify-between mb-3">
-                <p className="text-sm font-semibold text-slate-900">Top SKU biến động nhiều nhất</p>
-                <p className="text-[9px] font-mono text-slate-400 uppercase">phân rã từ {result.sku_count} SKU theo ngành</p>
+                <p className="text-sm font-semibold text-[#14231D]">Mã hàng biến động nhiều nhất</p>
+                <p className="text-[9px] text-[#8A968C] uppercase">phân rã từ {result.sku_count} mã hàng theo ngành</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-left text-[10px] font-mono text-slate-400 uppercase border-b border-slate-200">
-                      <th className="py-2 pr-3">SKU</th>
+                    <tr className="text-left text-[10px] text-[#8A968C] uppercase border-b border-[#E7E3D8]">
+                      <th className="py-2 pr-3">Mã SP</th>
                       <th className="py-2 pr-3 text-right">Hiện tại</th>
                       <th className="py-2 pr-3 text-right">Kịch bản</th>
                       <th className="py-2 pr-3 text-right">Δ</th>
@@ -2391,15 +2419,15 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
                   </thead>
                   <tbody>
                     {result.top_sku_movements.map((r) => (
-                      <tr key={r.item_nbr} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-3 font-mono text-slate-700">#{r.item_nbr}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-slate-500">{fmt(r.baseline_total)}</td>
-                        <td className="py-2 pr-3 text-right font-mono text-slate-800">{fmt(r.scenario_total)}</td>
-                        <td className={`py-2 pr-3 text-right font-mono ${r.delta >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                      <tr key={r.item_nbr} className="border-b border-[#EFECE3] last:border-0">
+                        <td className="py-2 pr-3 text-[#2A3B32]">{r.item_nbr}</td>
+                        <td className="py-2 pr-3 text-right text-[#5C6B62]">{fmt(r.baseline_total)}</td>
+                        <td className="py-2 pr-3 text-right text-[#1B2C23]">{fmt(r.scenario_total)}</td>
+                        <td className={`py-2 pr-3 text-right ${r.delta >= 0 ? "text-[#2E7A4B]" : "text-[#D94436]"}`}>
                           {r.delta >= 0 ? "+" : ""}{fmt(r.delta)}
                         </td>
-                        <td className="py-2 pr-3 text-right font-mono text-slate-500">{fmt(r.stock)}</td>
-                        <td className={`py-2 text-right font-mono ${r.shortfall > 0 ? "text-red-500 font-medium" : "text-slate-400"}`}>
+                        <td className="py-2 pr-3 text-right text-[#5C6B62]">{fmt(r.stock)}</td>
+                        <td className={`py-2 text-right ${r.shortfall > 0 ? "text-[#D94436] font-medium" : "text-[#8A968C]"}`}>
                           {fmt(r.shortfall)}
                         </td>
                       </tr>
@@ -2407,7 +2435,7 @@ function ScenarioLab({ branchId, apiBase, auth, onAuthError }: {
                   </tbody>
                 </table>
               </div>
-              <p className="text-[10px] text-slate-400 mt-2">
+              <p className="text-[10px] text-[#8A968C] mt-2">
                 Phân rã SKU theo tỷ trọng dự báo hiện có — số liệu SKU mang tính xấp xỉ.
               </p>
             </div>
@@ -2428,15 +2456,15 @@ function Sidebar({
 }) {
   return (
     <aside
-      className="flex-shrink-0 bg-white border-r border-slate-200 flex flex-col transition-all duration-200 overflow-hidden z-10"
-      style={{ width: open ? "220px" : "52px" }}
+      className="flex-shrink-0 bg-[#1E5A46] flex flex-col transition-all duration-200 overflow-hidden z-10"
+      style={{ width: open ? "232px" : "56px" }}
     >
-      <div className="h-12 flex items-center gap-2.5 px-3.5 border-b border-slate-200 flex-shrink-0">
-        <div className="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center flex-shrink-0">
-          <Warehouse size={13} className="text-white" />
+      <div className="h-12 flex items-center gap-2.5 px-3.5 border-b border-white/10 flex-shrink-0">
+        <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center flex-shrink-0">
+          <span className="font-display font-bold text-[#1E5A46] text-[13px]">B</span>
         </div>
         {open && (
-          <span className="text-sm font-semibold text-slate-900 whitespace-nowrap overflow-hidden">BizAI</span>
+          <span className="text-sm font-semibold text-white whitespace-nowrap overflow-hidden font-display">BizAI</span>
         )}
       </div>
 
@@ -2448,7 +2476,7 @@ function Sidebar({
               key={id}
               onClick={() => setView(id)}
               title={!open ? label : undefined}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-xs transition-all duration-150 whitespace-nowrap overflow-hidden ${active ? "bg-blue-50 text-blue-600 border border-blue-200" : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent"}`}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-xs transition-all duration-150 whitespace-nowrap overflow-hidden ${active ? "bg-white/10 text-white border-l-2 border-l-[#3E8E5A]" : "text-white/70 hover:text-white hover:bg-white/5 border-l-2 border-l-transparent"}`}
             >
               <Icon size={14} className="flex-shrink-0" />
               {open && <span className="overflow-hidden text-ellipsis">{label}</span>}
@@ -2458,20 +2486,20 @@ function Sidebar({
       </nav>
 
       {open && (
-        <div className="p-3 border-t border-slate-200 flex-shrink-0">
+        <div className="p-3 border-t border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center text-[10px] font-bold text-blue-600 flex-shrink-0">
+            <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
               {(user?.displayName || user?.username || "?").trim().charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-slate-900 truncate">{user?.displayName || "Chưa đăng nhập"}</p>
-              <p className="text-[10px] text-slate-500 font-mono truncate">
-                {user ? (user.role === "admin" ? "Quản trị viên" : "Store Manager") : ""}
+              <p className="text-xs font-medium text-white truncate">{user?.displayName || "Chưa đăng nhập"}</p>
+              <p className="text-[10px] text-white/60 truncate">
+                {user ? (user.role === "admin" ? "Quản trị viên" : "Quản lý cửa hàng") : ""}
               </p>
             </div>
             <button
               onClick={onLogout}
-              className="text-slate-400 hover:text-red-500 p-1 rounded transition-colors"
+              className="text-white/50 hover:text-white p-1 rounded transition-colors"
               title="Đăng xuất"
             >
               <LogOut size={13} />
@@ -2502,7 +2530,7 @@ export default function App() {
   const [view, setView] = useState<View>("sales");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [branchId, setBranchId] = useState("all");
-  const [apiBase, setApiBase] = useState(defaultApiBase);
+  const [apiBase] = useState(defaultApiBase);
   const [liveStores, setLiveStores] = useState<number[] | null>(null);
 
   // ── Auth state (Row-Level Isolation) ──
@@ -2557,19 +2585,44 @@ export default function App() {
     };
   }, [apiBase, auth]);
 
+  // User chỉ có đúng 1 cửa hàng trong phạm vi (manager cửa hàng riêng lẻ)
+  // -> tự chọn cửa hàng đó thay vì "all": nút nhập hàng cần store cụ thể,
+  // ngưỡng cảnh báo tồn kho dùng 30 thay vì 600 toàn hệ thống.
+  useEffect(() => {
+    if (liveStores && liveStores.length === 1) setBranchId(String(liveStores[0]));
+  }, [liveStores]);
+
+  // Cửa sổ dữ liệu cho pill ở TopBar: ngày bán cuối = date_from( forecasts ) - 1 ngày,
+  // hết kỳ dự báo = date_to. Fetch 1 lần toàn cục (không theo store) — lỗi thì ẩn pill.
+  const [dataWindow, setDataWindow] = useState<{ last: string; forecastTo: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setDataWindow(null);
+    apiFetch(apiBase, "/api/forecast-meta", auth)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((m) => {
+        if (cancelled || !m?.date_from || !m?.date_to) return;
+        const last = new Date(Date.parse(m.date_from + "T00:00:00Z") - 86400000)
+          .toISOString().slice(0, 10);
+        setDataWindow({ last, forecastTo: m.date_to });
+      })
+      .catch(() => { if (!cancelled) setDataWindow(null); });
+    return () => { cancelled = true; };
+  }, [apiBase, auth]);
+
   const branches = liveStores
     ? [
       { id: "all", label: "Tất cả cơ sở", city: `${liveStores.length} cửa hàng` },
-      ...liveStores.map((s) => ({ id: String(s), label: `Cửa hàng #${s}`, city: "" })),
+      ...liveStores.map((s) => ({ id: String(s), label: `Cửa hàng ${s}`, city: "" })),
     ]
-    : [{ id: "all", label: "Đang kết nối backend...", city: "" }];
+    : [{ id: "all", label: "Đang kết nối dữ liệu...", city: "" }];
 
   if (!auth) {
-    return <LoginView apiBase={apiBase} setApiBase={setApiBase} onLoggedIn={handleLoginSuccess} />;
+    return <LoginView apiBase={apiBase} onLoggedIn={handleLoginSuccess} />;
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden" style={{ fontFamily: "'Be Vietnam Pro', system-ui, sans-serif" }}>
+    <div className="flex h-screen bg-[#F6F4EE] text-[#14231D] overflow-hidden">
       <Sidebar
         view={view}
         setView={setView}
@@ -2580,42 +2633,49 @@ export default function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* TopBar */}
-        <header className="h-12 flex-shrink-0 border-b border-slate-200 bg-white flex items-center px-4 gap-3">
+        <header className="h-12 flex-shrink-0 border-b border-[#E7E3D8] bg-white flex items-center px-4 gap-3">
           <button
             onClick={() => setSidebarOpen((x) => !x)}
-            className="text-slate-500 hover:text-slate-900 transition-colors p-1 rounded-md hover:bg-slate-100"
+            className="text-[#5C6B62] hover:text-[#14231D] transition-colors p-1 rounded-md hover:bg-[#EDEAE0]"
             title={sidebarOpen ? "Thu gọn menu" : "Mở rộng menu"}
           >
             <Menu size={15} />
           </button>
           <div className="relative max-w-xs w-full hidden sm:block">
-            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A968C]" />
             <input
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500/40 transition-colors"
+              className="w-full bg-[#F6F4EE] border border-[#E7E3D8] rounded-lg pl-8 pr-3 py-1.5 text-xs text-[#14231D] placeholder:text-[#8A968C] focus:outline-none focus:border-[#1E5A46]/40 transition-colors"
               placeholder="Tìm kiếm toàn hệ thống..."
             />
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <input
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              placeholder="http://localhost:8000"
-              className="hidden md:block text-[10px] px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 w-44 font-mono outline-none focus:border-blue-500/40 transition-colors"
-              title="Địa chỉ backend API"
-            />
-            <div className={`hidden lg:flex items-center gap-1.5 text-[10px] font-mono rounded-full px-2.5 py-1 border ${liveStores !== null ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" : "text-red-500 bg-red-500/10 border-red-500/25"}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${liveStores !== null ? "bg-emerald-500" : "bg-red-500"}`} />
-              {liveStores !== null ? "Hệ thống hoạt động" : "Mất kết nối backend"}
-            </div>
-            <button className="relative w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors">
-              <Bell size={14} />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
+          <div className="ml-auto flex items-center gap-3">
+            {dataWindow && (
+              <div
+                className="hidden md:flex items-center gap-1.5 bg-[#F6F4EE] border border-[#E7E3D8] rounded-full pl-2.5 pr-3 py-1.5"
+                title={`Dữ liệu bán hàng cập nhật đến ${formatDateVN(dataWindow.last)} — dự báo phủ 16 ngày tiếp theo (đến ${formatDateVN(dataWindow.forecastTo)})`}
+              >
+                <CalendarDays size={11} className="text-[#8A968C] shrink-0" />
+                <span className="text-[10px] font-mono text-[#8A968C] whitespace-nowrap">DL đến</span>
+                <span className="text-[10px] font-mono font-semibold text-[#14231D] whitespace-nowrap">{formatDateVN(dataWindow.last)}</span>
+              </div>
+            )}
+            <button className="relative w-8 h-8 flex items-center justify-center rounded-lg text-[#5C6B62] hover:text-[#14231D] hover:bg-[#EDEAE0] transition-colors">
+              <Bell size={15} />
             </button>
+            <div
+              className="w-8 h-8 rounded-full bg-[#1E5A46] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+              title={auth.displayName}
+            >
+              {auth.displayName.trim().charAt(0).toUpperCase()}
+            </div>
           </div>
         </header>
 
-        {/* Branch tab bar */}
-        <BranchBar branches={branches} branchId={branchId} onSelect={setBranchId} />
+        {/* Branch tab bar - ẩn khi user chỉ có ≤1 cửa hàng trong phạm vi
+            (manager cửa hàng riêng lẻ; admin và manager đa cửa hàng vẫn thấy) */}
+        {liveStores !== null && liveStores.length > 1 && (
+          <BranchBar branches={branches} branchId={branchId} onSelect={setBranchId} />
+        )}
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-5">

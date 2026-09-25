@@ -327,7 +327,7 @@ class TestInventoryAPI:
         assert response.status_code == 422
 
     def test_restock_out_of_scope_403(self, manager1_headers):
-        """TEST-062: manager1 (stores 1-10) restock store 15 → 403.
+        """TEST-062: manager1 (store 1) restock store 15 → 403.
 
         ensure_store_access chạy TRƯỚC update_stock_db trong
         inventory_routes.py nên không có ghi nào xảy ra vào DB.

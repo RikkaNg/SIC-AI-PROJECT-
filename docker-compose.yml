@@ -52,6 +52,9 @@ services:
       - LLM_HISTORY_TOKEN_BUDGET=${LLM_HISTORY_TOKEN_BUDGET:-1200}
       - LLM_HISTORY_MAX_MESSAGES=${LLM_HISTORY_MAX_MESSAGES:-40}
       - LLM_HISTORY_MAX_CHARS_PER_MSG=${LLM_HISTORY_MAX_CHARS_PER_MSG:-4000}
+      # Chống bịa số liệu: tỉ lệ số trong reply phải có trong kết quả tool; 0 retry = tắt
+      - LLM_GROUNDING_MIN_MATCH=${LLM_GROUNDING_MIN_MATCH:-0.6}
+      - LLM_GROUNDING_RETRIES=${LLM_GROUNDING_RETRIES:-1}
     depends_on:
       ml_service:
         condition: service_healthy

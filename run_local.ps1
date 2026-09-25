@@ -40,4 +40,4 @@ npm run dev
 
 Write-Host ""
 Write-Host "Da mo 3 cua so. Cho ~20-40s roi mo:  http://localhost:5173" -ForegroundColor Green
-Write-Host "Tai khoan: admin/admin123 | manager1/manager123 | manager2/manager123"
+Write-Host "Tai khoan: admin/admin123 (54 cua hang) | managerN/manager123 (quan ly rieng cua hang N, vd manager1, manager2)"
