@@ -1,149 +1,192 @@
 # SIC-AI-PROJECT
 
-SIC-AI-PROJECT/
-│
-├── backend/                         # API Gateway + Orchestrator (FastAPI)
-│   ├── src/
-│   │   ├── database/                # Nơi lưu trữ DB SQLite & kết nối
-│   │   │   ├── connection.py        # Quản lý connection SQLite WAL mode
-│   │   │   └── retail.db            # File SQLite Database
-│   │   ├── llm_agent/               # Toàn bộ logic LLM Agent (Groq Qwen 3 - qwen/qwen3-32b)
-│   │   ├── security.py              # Auth JWT/API-key + Row-Level Isolation theo cửa hàng
-│   │   ├── scripts/init_auth.py     # Tạo auth.db + seed user (admin / manager1..manager54, mỗi manager 1 cửa hàng)
-│   │   └── database/
-│   │       ├── retail.db            # Dữ liệu bán lẻ (SQLite WAL)
-│   │       └── auth.db              # User + quyền store_nbr (tách riêng để không mất khi re-init)
-│   │   │   ├── config.py            # Khởi tạo Groq Client
-│   │   │   ├── prompts.py           # Quản lý System Prompts chuỗi cung ứng
-│   │   │   ├── tools.py             # Function calling (Truy vấn DB, tính toán tồn kho)
-│   │   │   └── agent.py             # Bộ não Qwen Agent
-│   │   ├── services/                # Các client giao tiếp nội bộ
-│   │   │   └── ml_client.py         # Code httpx gọi sang ml_service (:8001)
-│   │   ├── routes/                  # API endpoints cho Web UI
-│   │   │   ├── forecast_routes.py   # API lấy số liệu dự báo
-│   │   │   ├── inventory_routes.py  # API quản lý tồn kho, đặt hàng
-│   │   │   └── chat_routes.py       # API tương tác với LLM Assistant
-│   │   └── main.py                  # Entrypoint khởi động FastAPI Gateway (:8000)
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── ml_service/                      # Microservice dự báo ML (Port 8001)
-│   ├── models/                      # Chứa các file trọng số (Mount vào container)
-│   │   ├── local_lgbm_models.pkl    # 33 Local Models
-│   │   ├── lgbm_model.pkl           # Global LGBM Fallback
-│   │   ├── catboost_model.cbm       # Global CatBoost Fallback
-│   │   ├── cluster_engineer.pkl     # Bộ mã hóa Cluster / Store
-│   │   └── preprocessor.pkl         # Scaler / Target Encoder
-│   ├── app/
-│   │   ├── main.py                  # FastAPI server: /health, /predict
-│   │   └── inference.py             # Smart Routing & Recursive Forecasting
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── ml_training/                     # Môi trường huấn luyện Offline (Chạy trên máy cục bộ)
-│   ├── data/
-│   │   ├── raw/                     # Dữ liệu gốc Kaggle (train.csv, items.csv,...)
-│   │   └── processed/               # Feature store sau khi xử lý
-│   ├── notebooks/
-│   │   └── 01_EDA.ipynb
-│   ├── src/
-│   │   ├── data_loader.py           # Đọc và ghép nối dữ liệu
-│   │   ├── preprocessor.py          # Feature Engineering (Lags, Rolling, Date)
-│   │   ├── train.py                 # Huấn luyện 33 local + Global models
-│   │   └── init_database.py         # Script nạp dữ liệu lịch sử & dự báo vào retail.db
-│   └── requirements.txt
-│
-├── frontend/                        # Giao diện người dùng (React/Vite + Tailwind, build bằng Dockerfile & nginx)
-│   ├── src/
-│   ├── requirements.txt (hoặc package.json)
-│   └── Dockerfile
-│
-├── docker-compose.yml               # Điều phối 3 services: ml_service, backend, frontend
-├── .env                             # Chứa GROQ_API_KEY (Không commit lên Git)
-├── .gitignore
-└── README.md
+Hệ thống **AI quản trị chuỗi cung ứng bán lẻ**: dự báo nhu cầu bằng Machine Learning,
+AI Agent trả lời câu hỏi kinh doanh bằng tiếng Việt tự nhiên (28 tools function-calling),
+dashboard quản trị với Scenario Lab kịch bản what-if — tất cả chạy local bằng Docker.
 
-## API sản phẩm (SKU cụ thể - dữ liệu thật từ retail.db)
+> Dataset: bán lẻ Ecuador (54 cửa hàng, 2013–2017, ~59 triệu dòng giao dịch lịch sử).
+> Dự báo: 33 local models theo ngành hàng + global ensemble (LightGBM + CatBoost).
+
+---
+
+## Kiến trúc
+
+```
+┌─────────────┐   /api/*    ┌──────────────────┐   /predict   ┌──────────────┐
+│  Frontend   │ ──────────> │  Backend Gateway │ ───────────> │  ML Service  │
+│ React+Vite  │   :8501→80  │  FastAPI  :8000  │  :8001       │  FastAPI     │
+│ (nginx)     │             │  + LLM Agent     │ <──────────  │  33 models   │
+└─────────────┘             │  + RLS + JWT/API │   SQLite WAL └──────────────┘
+                            └────────┬─────────┘   (read-only)
+                                     │ Groq API (Qwen 3.8, function calling)
+                                     ▼
+                              retail.db (SQLite ~4GB, không commit)
+```
+
+| Service | Port | Vai trò |
+|---|---|---|
+| `frontend` | 8501→80 | Dashboard React/Vite qua nginx, healthcheck riêng |
+| `backend` | 8000 | API Gateway: auth JWT/X-API-Key, RLS theo cửa hàng, LLM Agent, Scenario API |
+| `ml_service` | 8001 | Dự báo: smart routing 33 local model per-family + global LGBM/CatBoost ensemble, dự báo đệ quy 16 ngày |
+| `ml-retrain` | one-shot | Profile compose (`--profile retrain`): train lại model → nạp forecasts/inventory/sku_stats vào DB |
+
+## Cấu trúc thư mục
+
+```
+├── backend/
+│   ├── src/
+│   │   ├── llm_agent/            # AI Agent: agent.py (điều phối + chống bịa + retry),
+│   │   │                         #   tools.py (28 tools), prompts.py, config.py
+│   │   ├── routes/               # auth, chat, dashboard, forecast, inventory,
+│   │   │                         #   product, scenario (kịch bản what-if)
+│   │   ├── services/             # ml_client.py, scenario_service.py
+│   │   ├── security.py           # JWT HS256 + X-API-Key + Row-Level Isolation
+│   │   └── database/             # retail.db (~4GB, ignored) + auth.db (ignored)
+│   ├── scripts/                  # init_auth, build_sales_cache, build_business_cache,
+│   │                             #   build_promo_cache, load_daily_transactions, gen_jwt_secret
+│   ├── tests/                    # 143 test pytest (9 file)
+│   └── Dockerfile
+├── ml_service/
+│   ├── app/                      # main.py (routes), inference.py (smart routing + recursive)
+│   ├── models/                   # lgbm_model.pkl + preprocessor.pkl (được commit),
+│   │                             #   local_lgbm_models.pkl (retrain sinh, ignored)
+│   └── Dockerfile
+├── ml_training/
+│   ├── data/raw|processed/       # Dataset gốc + feature store (ignored, có .gitkeep)
+│   ├── src/                      # init_database, train, build_sku_stats, retrain_pipeline...
+│   └── notebook/01_EDA.ipynb
+├── frontend/src/app/App.tsx      # Toàn bộ dashboard (single-file app)
+├── docker-compose.yml            # 3 service + profile "retrain"
+├── pytest.ini                    # markers: llm, slow
+└── .envexamble                   # Template env (commit) — copy thành .env rồi điền key
+```
+
+## Quick start
+
+### 1. Cấu hình môi trường
+
+```bash
+cp .envexamble .env        # rồi điền GROQ_API_KEY (lấy tại console.groq.com/keys)
+```
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `GROQ_API_KEY` | — | API key Groq (bắt buộc cho AI Agent) |
+| `GROQ_BASE_URL` | (trống) | Endpoint OpenAI-compatible khác (VD OrcaRouter) — trống = Groq |
+| `LLM_MODEL_NAME` | `qwen/qwen3.8-27b` | Model Groq bất kỳ hỗ trợ function calling |
+| `LLM_REASONING_EFFORT` | `none` | Tắt thinking của Qwen 3 (trống = không gửi tham số) |
+| `LLM_HISTORY_TOKEN_BUDGET` | `1200` | Ngân sách token cho lịch sử hội thoại (backend tự trim) |
+| `LLM_HISTORY_MAX_MESSAGES` / `_MAX_CHARS_PER_MSG` | `40` / `4000` | Giới hạn số tin / độ dài mỗi tin |
+| `LLM_GROUNDING_MIN_MATCH` / `LLM_GROUNDING_RETRIES` | `0.6` / `1` | Chống bịa số liệu (0 = tắt verifier) |
+| `JWT_SECRET` | auto | Khóa ký JWT — sinh bằng `python backend/scripts/gen_jwt_secret.py` |
+
+Khởi động bằng Docker (khuyến nghị):
+
+```bash
+docker compose up -d --build          # 3 service + healthcheck tự động
+```
+
+Hoặc không Docker (3 cửa sổ PowerShell): `powershell -ExecutionPolicy Bypass -File run_local.ps1`.
+Đăng nhập: `admin/admin123` (toàn chuỗi) · `manager1|manager2/manager123` (RLS theo cửa hàng).
+
+### 2. Dựng database + cache (chạy 1 lần)
+
+```bash
+python ml_training/src/init_database.py            # retail.db: schema + dữ liệu + 2 bảng agg cơ bản
+python backend/scripts/build_business_cache.py     # agg_daily_business + family_prices + sku_stats (doanh thu USD tham chiếu)
+python backend/scripts/build_promo_cache.py        # agg_promo_family_stats (quét 59M dòng ~20 phút, 1 lần duy nhất)
+python backend/scripts/load_daily_transactions.py  # daily_transactions (lượt khách theo ngày)
+python backend/scripts/init_auth.py                # auth.db: admin + manager theo cửa hàng
+```
+
+`retail.db` (~4GB) và `auth.db` bị gitignore — ai clone repo phải tự dựng từ `ml_training/data/raw`.
+
+---
+
+## AI Agent — 28 tools function calling
+
+Agent trả lời câu hỏi tiếng Việt tự nhiên (không cần cú pháp), chỉ được dùng số liệu
+từ tool — hỏi ngoài phạm vi thì từ chối có hướng dẫn thay vì bịa.
+
+| Nhóm | Tools |
+|---|---|
+| Dự báo & tồn kho | `get_sales_summary` (kèm `forecast_window` mốc ngày thật), `get_family_forecast`, `check_stockout_risk`, `check_perishable_risk`, `calculate_reorder_point`, `calculate_purchase_target`, `evaluate_stockout_loss`, `find_cross_sell_items`, `recommend_slow_mover_strategy` |
+| Doanh thu thực tế | `get_monthly_revenue`, `compare_stores_revenue`, `get_top_selling_items`, `get_store_traffic`, `get_store_profile`, `get_item_profile` |
+| Phân tích tài chính (FP&A) | `analyze_gross_margin`, `analyze_revenue_change` (phân tách lượt khách × giá trị hóa đơn, bridge đóng về 0), `benchmark_store_vs_peers`, `analyze_reorder_profitability` |
+| Quản trị bán lẻ | `analyze_inventory_health` (DOH/vòng quay/overstock), `find_dead_stock`, `get_abc_analysis` (A≤80%/B≤95%), `analyze_weekly_pattern`, `compare_family_mix` |
+| Kịch bản | `run_scenario_analysis` (ML what-if theo ngành), `simulate_demand_multiplier`, `compare_cluster_trends`, `evaluate_promotion_impact` |
+
+### Chống bịa số liệu (grounding check)
+
+- **Đường A** (có gọi tool): mọi số trong câu trả lời được đối chiếu với payload tool
+  (hiểu cả định dạng `239.626,92` VN lẫn `239,626.92` US, bỏ qua số đếm nhỏ, chấp nhận
+  số derived ≤ ngưỡng). Khớp < `LLM_GROUNDING_MIN_MATCH` → tự retry 1 lần ép dùng số từ tool.
+- **Đường B** (không gọi tool nào nhưng reply chứa số) → retry với tools vẫn cấp:
+  hoặc gọi tool, hoặc thừa nhận chưa có dữ liệu.
+- System prompt có danh mục NĂNG LỰC / KHÔNG CÓ (giá bán thật từng SKU, chi phí cố định,
+  dòng tiền, lợi nhuận ròng, đối thủ...).
+
+### Ngữ cảnh hội thoại & độ trễ
+
+- Lịch sử do backend làm chủ: sanitize role (chặn client chèn `system`/`tool` giả),
+  trim theo ngân sách token, không cắt giữa cặp hỏi–đáp.
+- Retry 429 thông minh: đọc thời lượng Groq khuyên chờ; hết hạn mức **ngày** (TPD 200K
+  free tier) thì báo lỗi rõ thay vì treo. Mỗi LLM call đều log latency + token usage.
+- Trần thực tế của gói free Groq (TPM 8K): 1 câu hỏi ~6K token → câu hỏi đơn lẻ ~1–5s;
+  hỏi liên tục trong cùng một phút sẽ chờ cửa sổ hạn mức (~30–45s). Nâng tier là cách
+  xử lý triệt để duy nhất.
+
+---
+
+## API Gateway (:8000, tất cả áp RLS)
 
 | Endpoint | Mô tả |
 |---|---|
-| `GET /api/products` | Danh mục 4.100 sản phẩm thật: tồn kho, tổng bán 2016, trạng thái; hỗ trợ `search`, `family`, `status`, `sort`, phân trang server-side |
-| `GET /api/top-products` | Top sản phẩm bán chạy theo **item_nbr cụ thể** (doanh số 2016), lọc theo cửa hàng |
-| `GET /api/family-mix` | Thị phần doanh số theo nhóm hàng (pie chart) |
-| `GET /api/family-trend` | Chuỗi dự báo theo ngày × nhóm hàng từ model LightGBM |
-| `GET /api/product-families` | Danh sách nhóm hàng cho dropdown lọc |
+| `POST /api/auth/login` | JWT (admin/manager) hoặc `X-API-Key` cho ERP/POS |
+| `POST /api/chat` | AI Agent (lịch sử hội thoại được backend sanitize + trim) |
+| `GET /api/products` · `/api/top-products` · `/api/product-families` | Danh mục SKU, top bán chạy, ngành hàng |
+| `GET /api/family-mix` · `/api/family-trend` | Thị phần theo ngành, chuỗi dự báo ngày × ngành |
+| `GET /api/dashboard/*` · `/api/forecast` · `/api/inventory/*` | KPI, dự báo, tồn kho/đặt hàng |
+| `POST /api/scenario/run` · `GET /api/scenario/meta` | Scenario Lab what-if (dự báo lại bằng model thật) |
 
-Tất cả đều áp Row-Level Isolation theo phạm vi cửa hàng của user.
+Lỗi LLM/Gateway trả HTTP 502 kèm `detail` tiếng Việt rõ ràng.
 
-### Bảng tổng hợp cache (BẮT BUỘC chạy 1 lần sau khi init DB)
+## Scenario Lab
 
-Các endpoint trên đọc bảng tổng hợp để phản hồi <1s thay vì quét ~59 triệu dòng historical_sales:
+Chỉnh số liệu (hệ số cầu 0.5–2×, khuyến mãi, giá dầu, lưu lượng khách, sự kiện
+ngày lễ/thiên tai, tồn kho + lead time) → dự báo lại bằng mô hình thật 16 ngày →
+so trước/sau + KPI + kết luận. Hai kênh dùng chung một engine: view "Kịch bản What-if"
+trên dashboard, hoặc hỏi trực tiếp chatbot. Lần chạy đầu backend đọc `test.csv` (126MB)
+để nạp lịch khuyến mãi baseline (~1–2 phút, tự cache). Một lần chạy ~30–45s.
 
-```bash
-python backend/scripts/build_sales_cache.py   # dựng agg_item_store_sales + agg_forecast_date_family (~60s)
-```
+## ML Service (:8001) & Training
 
-`ml_training/src/init_database.py` cũng tự dựng 2 bảng này mỗi lần init DB.
+- `GET /health` · `POST /predict` · `POST /predict/batch` · `POST /forecast`
+- Smart routing: local model theo ngành nếu có, fallback global LGBM → CatBoost ensemble;
+  dự báo đệ quy 16 ngày cho chuỗi dài.
+- 6 chỉ số đánh giá sau mỗi lần train (RMSLE · MAE · RMSE · WAPE · WMAPE trọng số
+  perishable ×1.5 · R²): `ml_service/models/ensemble_meta.json` (global + Optuna) và
+  `local_models_metrics.csv` (33 local). Unit test công thức: `backend/tests/test_train_metrics.py`.
+- Retrain toàn bộ: `docker compose --profile retrain run --rm ml-retrain`
+  (train → dự báo → nạp lại `forecasts`/`inventory`/`sku_stats` vào retail.db).
 
-### LLM Chatbot
-
-- Model mặc định đã đổi sang **`qwen/qwen3.6-27b`** vì `qwen/qwen3-32b` bị Groq ngừng phục vụ
-  (API trả 404 `model_not_found` → backend 500 → frontend báo lỗi fetch). Đổi model khác qua `LLM_MODEL_NAME` trong `.env`.
-- Lỗi LLM giờ trả về HTTP 502 kèm `detail` tiếng Việt rõ ràng thay vì 500 trống không thông tin.
-- Sau khi đổi `.env`, cần **restart/recreate container backend** (`docker compose up -d --force-recreate backend`)
-  hoặc khởi động lại uvicorn để nhận model mới và các route sản phẩm mới.
-
-### Scenario Lab — kịch bản What-if (mới)
-
-Chỉnh số liệu → dự báo lại bằng mô hình thật → phân tích tự động → xem kết quả, ở **2 kênh**:
-
-- **Web**: view "Kịch bản What-if" trong dashboard — chọn cửa hàng + ngành hàng, chỉnh 6 nhóm số liệu
-  (hệ số nhu cầu 0.5–2×, khuyến mãi, giá dầu, lưu lượng khách, sự kiện bất ngờ ngày lễ/thiên tai,
-  tồn kho + lead time), bấm "Chạy kịch bản" → biểu đồ so sánh trước/sau + KPI + kết luận + đề xuất nhập + Top SKU biến động.
-- **Chatbot**: hỏi "giả lập tăng 30% nhu cầu ngành BEVERAGES tại cửa hàng 1" — LLM gọi tool
-  `run_scenario_analysis` (backend tự chạy toàn bộ phân tích, LLM chỉ trình bày lại).
-
-API: `POST /api/scenario/run` (RLS theo cửa hàng) + `GET /api/scenario/meta` (giá trị prefill).
-
-Lưu ý vận hành:
-
-- Lần chạy đầu mỗi tiến trình backend cần đọc `test.csv` (126 MB) để nạp lịch khuyến mãi baseline →
-  ~1-2 phút, sau đó tự cache ra `backend/src/database/scenario_future_promo.csv` (xóa file này để build lại).
-- 1 lần chạy kịch bản mất ~30-45s do dự báo đệ quy 16 ngày bên ml_service.
-- Lịch/khuyến mãi baseline lấy từ `ml_training/data/raw` (oil.csv, holidays_events.csv, test.csv);
-  docker đã mount read-only vào backend.
-
-### Bộ 6 chỉ số đánh giá model (RMSLE · MAE · RMSE · WAPE · WMAPE · R²)
-
-Sau mỗi lần train, kết quả đầy đủ nằm ở:
-
-- **Global ensemble**: `ml_service/models/ensemble_meta.json` → block `validation_metrics`
-  (`pooled_oof` cho LGBM/CatBoost/Blend + `per_fold`), block `hyperparam_search`
-  (kết quả Optuna: có chấp nhận tham số mới hay không), `product_quality` (one-shot/degradation).
-- **33 local models**: `ml_service/models/local_models_metrics.csv` — cột
-  `family, rmsle, mae, rmse, wape, wmape, r2` (val 28 ngày cuối, WMAPE trọng số perishable ×1.5).
-
-Công thức: RMSLE = √mean((log1p ŷ − log1p y)²) · MAE = mean|y−ŷ| · RMSE = √mean((y−ŷ)²) ·
-WAPE = Σ|y−ŷ|/Σ|y| · WMAPE = Σw|y−ŷ|/Σw|y| với w=1.5 nếu perishable · R² = 1 − SS_res/SS_tot.
-Unit test công thức: `backend/tests/test_train_metrics.py`.
-
-### Chạy test (backend/tests)
+## Chạy test
 
 ```bash
-# Từ thư mục gốc project (cần backend :8000 + ml_service :8001 đang chạy)
-python -m pytest                        # toàn bộ 113 test
-python -m pytest -m "not llm and not slow"   # bỏ qua các test gọi Groq API thật
-python -m pytest backend/tests/test_api.py -v
+python -m pytest                        # toàn bộ 143 test
+python -m pytest -m "not llm and not slow"   # bỏ qua test gọi Groq API thật
+python -m pytest backend/tests/test_llm_history.py -v   # chạy không cần server
 ```
 
-Lưu ý quan trọng:
+- Test integration trỏ `http://127.0.0.1:8000` (dùng IP thay vì `localhost` để tránh
+  `wslrelay.exe` chiếm IPv6 trên máy dev).
+- Test chat (`llm`, `slow`) gọi **Groq thật** — free tier 8K TPM / 200K TPD, chạy tách
+  lẻ hoặc nâng tier, nếu không sẽ 429 → backend 502 → test fail.
+- Test grounding/context (`test_llm_history.py`) dùng logic thuần, không cần backend.
 
-- Test dùng `http://127.0.0.1:8000/8001` (không phải `localhost`): trên máy dev,
-  `wslrelay.exe` chiếm `[::1]:8000/8001` (service cũ trong WSL không có model, trả
-  `degraded`) nên resolve `localhost` sang IPv6 sẽ trúng nhầm service đó.
-- Các test chat (`llm`, `slow` + chat trong test_api/test_security/test_edge_cases) gọi
-  **Groq API thật**. Free tier chỉ có 8.000 TPM / 200.000 TPD, mỗi lời gọi chat tốn
-  ~5.000 token → chạy cả suite một mạch sẽ bị 429 → backend trả 502 → test fail.
-  Hãy chạy test LLM tách lẻ (cách nhau ~45-60s) hoặc nâng tier Groq.
-- Cần Python có: fastapi, uvicorn, groq, pyjwt, httpx, pandas (backend) và
-  lightgbm, catboost, scikit-learn (ml_service), cùng pytest cho test.
+## Bảo mật
+
+- Mật khẩu PBKDF2-HMAC-SHA256 (200K iterations), JWT HS256 hết hạn theo `TOKEN_EXPIRE_MINUTES`.
+- **Row-Level Isolation**: manager chỉ thấy cửa hàng được gán — áp cho mọi API route
+  VÀ mọi tool của AI Agent (validate trước khi thực thi, kể cả so sánh 2 cửa hàng).
+- `retail.db`, `auth.db`, `.env` đều gitignore. `JWT_SECRET` sinh tự động, đừng dùng giá trị mặc định khi triển khai thật.
